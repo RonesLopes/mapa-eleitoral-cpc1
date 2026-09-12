@@ -857,12 +857,30 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   .status-tag.nao{background:#eee;color:#666;}
   .bpmtag{color:#777;font-size:9px;}
   .doc-foot{padding-top:6px;border-top:1px solid #999;font-size:9px;color:#555;text-align:center;}
+  .pdf-toolbar{
+    position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:#f2f3ee;border-bottom:1px solid #ccc;padding:10px 16px;
+  }
+  .pdf-toolbar .hint{font-size:11px;color:#555;}
+  .pdf-toolbar button{
+    border:1px solid #99a189;background:#fff;color:#12140f;border-radius:8px;padding:8px 14px;
+    font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;flex:none;
+  }
+  .pdf-toolbar button:hover{background:#eef0e6;}
+  .doc-content{padding:0 16px 24px;}
   @media print{
     thead{display:table-header-group;}
     tfoot{display:table-footer-group;}
+    .pdf-toolbar{display:none;}
+    .doc-content{padding:0;}
   }
 </style></head>
 <body>
+<div class="pdf-toolbar">
+  <span class="hint">Visualização do documento — confira antes de imprimir ou salvar como PDF.</span>
+  <button type="button" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+</div>
+<div class="doc-content">
 <div class="letterhead">
   <div class="crest">PM</div>
   <div class="org">
@@ -901,7 +919,7 @@ ${bpmBreakdownHtml}
     </td></tr>
   </tfoot>
 </table>
-<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 250); };<\/script>
+</div>
 </body></html>`;
 
     const blob = new Blob([html], {type:'text/html'});
