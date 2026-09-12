@@ -99,7 +99,8 @@ a{color:inherit;}
 
 /* ---------- layout ---------- */
 .app{display:grid;grid-template-columns:320px 1fr;min-height:100vh;}
-.mapwrap{position:relative;background:var(--map-bg);overflow:hidden;min-height:100vh;}
+.sidebar{grid-column:1;}
+.mapwrap{grid-column:2;position:relative;background:var(--map-bg);overflow:hidden;min-height:100vh;}
 @media (max-width:760px){
   .app{grid-template-columns:1fr;}
 }
@@ -175,13 +176,25 @@ a{color:inherit;}
 
 .legend{
   position:absolute;left:16px;bottom:16px;background:var(--surface);border:1px solid var(--line);
-  border-radius:10px;padding:12px 14px;box-shadow:var(--shadow);font-size:12px;max-width:220px;z-index:650;
+  border-radius:10px;padding:10px 14px;box-shadow:var(--shadow);font-size:12px;max-width:220px;z-index:650;
+  max-height:calc(100vh - 32px);overflow-y:auto;
 }
+.legend .lhead{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600;cursor:pointer;
+  padding:2px 0;user-select:none;
+}
+.legend .lhead .chev{color:var(--muted);transition:transform .15s ease;font-size:11px;}
+.legend.collapsed .lhead .chev{transform:rotate(-90deg);}
+.legend .lbody{margin-top:8px;}
+.legend.collapsed .lbody{display:none;}
 .legend .lrow{display:flex;align-items:center;gap:8px;padding:3px 0;}
 .legend .lrow .count{margin-left:auto;font-family:var(--font-mono);color:var(--muted);font-size:11px;}
 .legend .lnote{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);font-size:10.5px;line-height:1.4;}
 .legend .lsec{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
 .legend .lthumb{width:18px;height:18px;border-radius:50%;object-fit:cover;flex:none;background:var(--surface-2);}
+@media (max-width:760px){
+  .legend{max-width:min(72vw,260px);}
+}
 
 .ricon{width:36px;height:36px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px var(--surface), var(--shadow);background:var(--surface-2);}
 .ricon img{width:100%;height:100%;object-fit:cover;display:block;}
@@ -214,6 +227,8 @@ a{color:inherit;}
 .topbadge .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);}
 
 .filtoggle{display:none;}
+.backdrop{display:none;position:fixed;inset:0;background:rgba(10,10,5,.35);z-index:640;}
+.backdrop.show{display:block;}
 @media (max-width:760px){
   .filtoggle{
     display:flex;position:absolute;top:16px;right:16px;z-index:650;background:var(--surface);
@@ -225,10 +240,6 @@ a{color:inherit;}
     transform:translateX(-100%);transition:transform .25s ease;box-shadow:var(--shadow);
   }
   .sidebar.open{transform:translateX(0);}
-  .backdrop{
-    display:none;position:fixed;inset:0;background:rgba(10,10,5,.35);z-index:640;
-  }
-  .backdrop.show{display:block;}
 }
 
 /* ---------- detail panel ---------- */
@@ -410,12 +421,15 @@ function renderApp(bpm){
           <button type="button" class="active" id="turno1Btn">1º turno</button>
           <button type="button" id="turno2Btn">2º turno</button>
         </div>
-        <div class="legend">
-          ${ciaOrder.map(c=>`<div class="lrow"><span class="swatch" style="background:${ciaColor[c]}"></span>${esc(c==='CIA não informada'?'Não informada':c)}<span class="count tabular">${escolas.filter(e=>e.cia===c).length}</span></div>`).join('')}
-          <div class="lsec">
-            ${Object.keys(DATA.resourceLabels).filter(k=>k!=='outro').map(k=>`<div class="lrow"><img class="lthumb" src="icons/${k}.png" alt="">${esc(DATA.resourceLabels[k])}</div>`).join('')}
+        <div class="legend" id="legend">
+          <div class="lhead" id="legendToggle">Legenda <span class="chev">▾</span></div>
+          <div class="lbody">
+            ${ciaOrder.map(c=>`<div class="lrow"><span class="swatch" style="background:${ciaColor[c]}"></span>${esc(c==='CIA não informada'?'Não informada':c)}<span class="count tabular">${escolas.filter(e=>e.cia===c).length}</span></div>`).join('')}
+            <div class="lsec">
+              ${Object.keys(DATA.resourceLabels).filter(k=>k!=='outro').map(k=>`<div class="lrow"><img class="lthumb" src="icons/${k}.png" alt="">${esc(DATA.resourceLabels[k])}</div>`).join('')}
+            </div>
+            <div class="lnote">Cor = Companhia responsável. Ícone = recurso destacado no turno selecionado.</div>
           </div>
-          <div class="lnote">Cor = Companhia responsável. Ícone = recurso destacado no turno selecionado.</div>
         </div>
         <div class="zoomctl">
           <button class="zoombtn" id="zoomIn" type="button" aria-label="Aproximar">+</button>
@@ -550,6 +564,12 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
   const filtoggle = document.getElementById('filtoggle');
   filtoggle.addEventListener('click', ()=>{ sidebar.classList.add('open'); backdrop.classList.add('show'); map.invalidateSize(); });
   backdrop.addEventListener('click', ()=>{ sidebar.classList.remove('open'); backdrop.classList.remove('show'); });
+
+  // ---- collapsible legend (starts collapsed on small screens) ----
+  const legend = document.getElementById('legend');
+  const legendToggle = document.getElementById('legendToggle');
+  if(window.innerWidth <= 760) legend.classList.add('collapsed');
+  legendToggle.addEventListener('click', ()=> legend.classList.toggle('collapsed'));
 
   window.addEventListener('resize', ()=>map.invalidateSize());
   setTimeout(()=>map.invalidateSize(), 200);
