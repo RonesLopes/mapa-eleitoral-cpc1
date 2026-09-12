@@ -206,10 +206,12 @@ a{color:inherit;}
   .legend{max-width:min(72vw,260px);}
 }
 
-.ricon{width:36px;height:36px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px var(--surface), var(--shadow);background:var(--surface-2);}
+.ricon{width:36px;height:36px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px var(--surface), var(--shadow);background:var(--surface-2);transition:box-shadow .15s ease;}
 .ricon img{width:100%;height:100%;object-fit:cover;display:block;}
 .ricon.plain{display:flex;align-items:center;justify-content:center;}
 .ricon.plain .dotfill{width:12px;height:12px;border-radius:50%;}
+.ricon.situacao-pronto{box-shadow:0 0 0 3px #0ca30c, var(--shadow);}
+.ricon.situacao-falta{box-shadow:0 0 0 3px var(--critical), var(--shadow);}
 
 .turno-toggle{
   display:flex;gap:3px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px;
@@ -540,7 +542,7 @@ function renderApp(bpmList){
             <div class="lsec">
               ${Object.keys(DATA.resourceLabels).filter(k=>k!=='outro').map(k=>`<div class="lrow"><img class="lthumb" src="icons/${k}.png" alt="">${esc(DATA.resourceLabels[k])}</div>`).join('')}
             </div>
-            <div class="lnote">Cor = ordem da Companhia no batalhão (1ª, 2ª...). Ícone = recurso destacado no turno selecionado.</div>
+            <div class="lnote">Cor = ordem da Companhia no batalhão (1ª, 2ª...). Ícone = recurso destacado no turno selecionado. Contorno <b style="color:#0ca30c">verde</b> = Pronto, <b style="color:var(--critical)">vermelho</b> = Falta.</div>
           </div>
         </div>
         <div class="zoomctl">
@@ -603,11 +605,31 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
     return {layer, e, color};
   });
 
+  // ---- live "situação" ring on the marker itself (green=pronto, red=falta) ----
+  let situacaoMap = {};
+  function applySituacaoRing(entry){
+    const el = entry.layer.getElement();
+    const ricon = el && el.querySelector('.ricon');
+    if(!ricon) return;
+    const val = situacaoMap[situacaoDocId(entry.e)];
+    ricon.classList.toggle('situacao-pronto', val==='pronto');
+    ricon.classList.toggle('situacao-falta', val==='falta');
+  }
+  function refreshAllSituacaoRings(){ markerEntries.forEach(applySituacaoRing); }
+  if(db){
+    db.collection('status').onSnapshot(snap=>{
+      situacaoMap = {};
+      snap.forEach(doc=>{ situacaoMap[doc.id] = doc.data().situacao; });
+      refreshAllSituacaoRings();
+    }, err=>console.error('situação (live ring) indisponível:', err));
+  }
+
   function setTurno(t){
     turno = t;
     document.getElementById('turno1Btn').classList.toggle('active', t==='1');
     document.getElementById('turno2Btn').classList.toggle('active', t==='2');
     markerEntries.forEach(({layer, e, color})=> layer.setIcon(makeIcon(e, color)));
+    refreshAllSituacaoRings();
     update();
   }
   document.getElementById('turno1Btn').addEventListener('click', ()=>setTurno('1'));
