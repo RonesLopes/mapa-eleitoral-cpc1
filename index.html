@@ -333,6 +333,17 @@ a{color:inherit;}
 }
 .report-head h2{font-size:16px;line-height:1.3;}
 .report-head .close{background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;width:30px;height:30px;flex:none;}
+.report-head-actions{display:flex;align-items:center;gap:8px;flex:none;}
+.report-pdf-btn{
+  border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);border-radius:8px;
+  padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body);
+  display:flex;align-items:center;gap:4px;white-space:nowrap;
+}
+.report-pdf-btn:hover{background:var(--surface);}
+@media (max-width:460px){
+  .report-head h2{font-size:13.5px;}
+  .report-pdf-btn .label{display:none;}
+}
 .report-summary{display:flex;gap:10px;padding:16px 20px 4px;flex-wrap:wrap;}
 .report-chip{
   flex:1;min-width:84px;border-radius:12px;padding:10px 12px;text-align:center;background:var(--surface-2);
@@ -621,7 +632,10 @@ function renderApp(bpmList){
         <div class="report-panel">
           <div class="report-head">
             <h2>Relatório de guarnições — <span id="reportTurnoLabel"></span></h2>
-            <button class="close" id="reportClose" aria-label="Fechar">×</button>
+            <div class="report-head-actions">
+              <button type="button" class="report-pdf-btn" id="reportPdfBtn">🖨️<span class="label"> Visualizar PDF</span></button>
+              <button class="close" id="reportClose" aria-label="Fechar">×</button>
+            </div>
           </div>
           <div class="report-summary" id="reportSummary"></div>
           <div class="report-bpm-breakdown" id="reportBpmBreakdown"></div>
@@ -769,6 +783,135 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   document.getElementById('reportBtn').addEventListener('click', openReport);
   document.getElementById('reportClose').addEventListener('click', closeReport);
   reportOverlay.addEventListener('click', (ev)=>{ if(ev.target===reportOverlay) closeReport(); });
+
+  // ---- printable PDF version of the report: official CPC I letterhead, repeats per printed page ----
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function nowStr(){
+    const d = new Date();
+    return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  }
+  function openPdfReport(){
+    renderReport();
+    const suf = turno;
+    const bpmCode = multi ? null : (escolas[0] && escolas[0].bpm);
+    const battalionLine = multi ? '' : `${bpmCode}º BATALHÃO DE POLÍCIA MILITAR`;
+    const scopeLabel = multi ? 'Todos os batalhões — CPC I' : (DATA.bpmLabels[bpmCode]||'');
+    let falta=0, pronto=0, naoMarcado=0;
+    reportRows.forEach(({val})=>{ if(val==='falta') falta++; else if(val==='pronto') pronto++; else naoMarcado++; });
+    const bpmListLocal = multi ? [...new Set(escolas.map(e=>e.bpm))].sort((a,b)=>parseInt(a)-parseInt(b)) : [];
+    const bpmBreakdownHtml = bpmListLocal.length ? `<div class="bpm-breakdown">${bpmListLocal.map(bpm=>{
+      let f=0,p=0,n=0;
+      escolas.filter(e=>e.bpm===bpm).forEach(e=>{
+        const val = statusOf(e);
+        if(val==='falta') f++; else if(val==='pronto') p++; else n++;
+      });
+      return `<div><span>${esc(DATA.bpmLabels[bpm])}</span><span>${f} falta · ${n} pendente · ${p} pronto</span></div>`;
+    }).join('')}</div>` : '';
+    const rowsHtml = reportRows.map(({e,val})=>{
+      const statusLabel = val==='falta' ? 'Falta' : val==='pronto' ? 'Pronto' : 'Não marcado';
+      const statusClass = val==='falta' ? 'falta' : val==='pronto' ? 'pronto' : 'nao';
+      const data = situacaoDocs[situacaoDocId(e)] || {};
+      const guarnicao = data['guarnicao'+suf] || '';
+      const ts = data['updatedAt'+suf];
+      const updated = ts ? timeAgo(ts.toDate()) : '';
+      return `<tr>
+        <td>${esc(e.numero)}</td>
+        <td>${esc(e.local)}</td>
+        <td>${esc(titleCasePt(e.bairro))}${multi?` <span class="bpmtag">(${esc(e.bpm)}º BPM)</span>`:''}</td>
+        <td>${esc(e.cia==='CIA não informada'?'Não informada':e.cia)}</td>
+        <td><span class="status-tag ${statusClass}">${esc(statusLabel)}</span></td>
+        <td>${esc(guarnicao)||'—'}</td>
+        <td>${esc(updated)||'—'}</td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Policiamento nos Locais de Votação — CPC I</title>
+<style>
+  @page{ size:A4; margin:14mm 12mm; }
+  *{box-sizing:border-box;}
+  body{font-family:"IBM Plex Sans", Arial, sans-serif; color:#12140f; font-size:10.5px; margin:0;}
+  table.doc{width:100%; border-collapse:collapse;}
+  .letterhead{display:flex;align-items:center;gap:14px;padding-bottom:8px;border-bottom:2px solid #12140f;margin-bottom:8px;}
+  .letterhead .crest{width:52px;height:52px;border-radius:50%;background:#eef0e6;border:1px solid #99a189;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:#555;flex:none;}
+  .letterhead .org{flex:1;text-align:center;line-height:1.4;}
+  .letterhead .org div{font-size:11px;}
+  .letterhead .org .l1{font-weight:700;font-size:12.5px;}
+  .letterhead .org .l4,.letterhead .org .l5{font-weight:700;font-size:12px;margin-top:2px;}
+  .letterhead .meta{flex:none;text-align:right;font-size:9.5px;color:#444;white-space:nowrap;}
+  .doctitle{text-align:center;font-weight:800;font-size:13px;margin:8px 0 2px;text-transform:uppercase;letter-spacing:.02em;}
+  .docsub{text-align:center;font-size:10.5px;color:#444;margin-bottom:8px;}
+  .summary-row{display:flex;gap:18px;justify-content:center;margin-bottom:8px;font-size:11px;font-weight:700;}
+  .summary-row .falta{color:#b3261e;}
+  .summary-row .pronto{color:#0ca30c;}
+  .bpm-breakdown{margin:0 0 10px;font-size:10px;}
+  .bpm-breakdown div{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dotted #ccc;}
+  table.doc th, table.doc td{padding:5px 6px;text-align:left;vertical-align:top;}
+  table.doc thead tr.colheads th{border-top:1.5px solid #12140f;border-bottom:1.5px solid #12140f;font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;}
+  table.doc tbody td{border-bottom:1px solid #ddd;font-size:10px;}
+  table.doc tbody tr:nth-child(even) td{background:#f7f7f2;}
+  .status-tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700;text-transform:uppercase;white-space:nowrap;}
+  .status-tag.falta{background:#fbdede;color:#8f241d;}
+  .status-tag.pronto{background:#d9f2d3;color:#166b1a;}
+  .status-tag.nao{background:#eee;color:#666;}
+  .bpmtag{color:#777;font-size:9px;}
+  .doc-foot{padding-top:6px;border-top:1px solid #999;font-size:9px;color:#555;text-align:center;}
+  @media print{
+    thead{display:table-header-group;}
+    tfoot{display:table-footer-group;}
+  }
+</style></head>
+<body>
+<div class="letterhead">
+  <div class="crest">PM</div>
+  <div class="org">
+    <div class="l1">GOVERNO DO ESTADO DO PARÁ</div>
+    <div>SECRETARIA DE ESTADO DE SEGURANÇA PÚBLICA E DEFESA SOCIAL</div>
+    <div>POLÍCIA MILITAR DO PARÁ</div>
+    <div class="l4">COMANDO DE POLICIAMENTO DA CAPITAL I</div>
+    ${battalionLine ? `<div class="l5">${esc(battalionLine)}</div>` : ''}
+  </div>
+  <div class="meta">Emitido em<br>${nowStr()}</div>
+</div>
+<div class="doctitle">POLICIAMENTO NOS LOCAIS DE VOTAÇÃO NA ÁREA DO CPC I</div>
+<div class="docsub">${esc(scopeLabel)} · ${suf}º turno</div>
+<div class="summary-row">
+  <span class="falta">Falta: ${falta}</span>
+  <span>Não marcado: ${naoMarcado}</span>
+  <span class="pronto">Pronto: ${pronto}</span>
+</div>
+${bpmBreakdownHtml}
+<table class="doc">
+  <thead>
+    <tr class="colheads">
+      <th style="width:5%;">Nº</th>
+      <th style="width:26%;">Local</th>
+      <th style="width:16%;">Bairro</th>
+      <th style="width:10%;">CIA</th>
+      <th style="width:10%;">Situação</th>
+      <th style="width:23%;">Guarnição</th>
+      <th style="width:10%;">Atualizado</th>
+    </tr>
+  </thead>
+  <tbody>${rowsHtml}</tbody>
+  <tfoot>
+    <tr><td colspan="7" style="padding:0;">
+      <div class="doc-foot">Fonte: O.S. 324 — Operação Eleições 2026 · Documento gerado automaticamente pelo Mapa Eleitoral CPC I</div>
+    </td></tr>
+  </tfoot>
+</table>
+<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 250); };<\/script>
+</body></html>`;
+
+    const blob = new Blob([html], {type:'text/html'});
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if(!win){
+      alert('Não foi possível abrir a janela do relatório. Verifique se o bloqueador de pop-ups está desativado.');
+    }
+  }
+  document.getElementById('reportPdfBtn').addEventListener('click', openPdfReport);
 
   if(db){
     db.collection('status').onSnapshot(snap=>{
