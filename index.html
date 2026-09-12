@@ -154,6 +154,7 @@ a{color:inherit;}
   display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer;font-size:13px;
 }
 .check-row:hover{background:var(--surface);}
+.check-row.filtered-out{display:none;}
 .check-row input{accent-color:var(--accent);width:14px;height:14px;flex:none;}
 .swatch{width:10px;height:10px;border-radius:50%;flex:none;}
 .check-row .name{flex:1;color:var(--ink);}
@@ -397,7 +398,7 @@ function renderApp(bpmList){
     const color = ciaColorFor(cia);
     const ciaLabel = cia==='CIA não informada' ? 'Não informada' : cia;
     const label = multi ? `${bpm}º BPM · ${ciaLabel}` : ciaLabel;
-    return `<label class="check-row"><input type="checkbox" class="cia-check" data-ciakey="${esc(key)}" checked>
+    return `<label class="check-row" data-bpm="${esc(bpm)}"><input type="checkbox" class="cia-check" data-ciakey="${esc(key)}" data-bpm="${esc(bpm)}" checked>
       <span class="swatch" style="background:${color}"></span>
       <span class="name">${esc(label)}</span><span class="count tabular">${count}</span></label>`;
   }).join('');
@@ -411,7 +412,9 @@ function renderApp(bpmList){
   const bairroRows = bairroList.map(b=>{
     const count = escolas.filter(e=>e.bairroKey===b.key).length;
     const label = multi ? `${b.bpm}º BPM — ${titleCasePt(b.bairro)}` : titleCasePt(b.bairro);
-    return `<label class="check-row"><input type="checkbox" class="bairro-check" data-key="${esc(b.key)}" checked>
+    const cia = bairroToCia[b.key];
+    const ciakey = cia ? b.bpm+'|'+cia : '';
+    return `<label class="check-row" data-bpm="${esc(b.bpm)}" data-ciakey="${esc(ciakey)}"><input type="checkbox" class="bairro-check" data-key="${esc(b.key)}" checked>
       <span class="name">${esc(label)}</span><span class="count tabular">${count}</span></label>`;
   }).join('');
 
@@ -627,16 +630,36 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
     visibleCountEl.textContent = visible;
   }
 
-  ciaChecks.forEach(c=>c.addEventListener('change', update));
+  // ---- cascading filters: checking a Batalhão narrows the Companhia list to its
+  // own companies; checking a Companhia narrows the Bairro list to its own bairros ----
+  function refreshVisibility(){
+    const bpmOn = {}; bpmChecks.forEach(c=>bpmOn[c.dataset.bpm]=c.checked);
+    const ciaOn = {}; ciaChecks.forEach(c=>ciaOn[c.dataset.ciakey]=c.checked);
+    ciaChecks.forEach(c=>{
+      const row = c.closest('.check-row');
+      const visible = bpmChecks.length===0 || bpmOn[row.dataset.bpm]!==false;
+      row.classList.toggle('filtered-out', !visible);
+    });
+    bairroChecks.forEach(c=>{
+      const row = c.closest('.check-row');
+      const bpmVisible = bpmChecks.length===0 || bpmOn[row.dataset.bpm]!==false;
+      const ciakey = row.dataset.ciakey;
+      const ciaVisible = !ciakey || ciaOn[ciakey]!==false;
+      row.classList.toggle('filtered-out', !(bpmVisible && ciaVisible));
+    });
+  }
+
+  ciaChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); }));
   bairroChecks.forEach(c=>c.addEventListener('change', update));
   recursoChecks.forEach(c=>c.addEventListener('change', update));
-  bpmChecks.forEach(c=>c.addEventListener('change', update));
+  bpmChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); }));
   searchInput.addEventListener('input', update);
-  document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>c.checked=true); update();});
+  document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>c.checked=true); update(); refreshVisibility();});
   document.getElementById('resetBairro').addEventListener('click', ()=>{bairroChecks.forEach(c=>c.checked=true); update();});
   document.getElementById('resetRecurso').addEventListener('click', ()=>{recursoChecks.forEach(c=>c.checked=true); update();});
   const resetBpmBtn = document.getElementById('resetBpm');
-  if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update();});
+  if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update(); refreshVisibility();});
+  refreshVisibility();
 
   // ---- mobile sidebar toggle ----
   const sidebar = document.getElementById('sidebar');
