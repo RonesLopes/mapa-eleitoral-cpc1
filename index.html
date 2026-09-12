@@ -347,12 +347,17 @@ a{color:inherit;}
 .report-summary{display:flex;gap:10px;padding:16px 20px 4px;flex-wrap:wrap;}
 .report-chip{
   flex:1;min-width:84px;border-radius:12px;padding:10px 12px;text-align:center;background:var(--surface-2);
-  border:1px solid var(--line);
+  border:1px solid var(--line);cursor:pointer;font-family:var(--font-body);
 }
+.report-chip:hover{background:var(--surface);}
 .report-chip .n{display:block;font-family:var(--font-display);font-size:22px;font-weight:800;line-height:1.1;}
 .report-chip .l{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:3px;}
 .report-chip.falta .n{color:var(--critical);}
 .report-chip.pronto .n{color:#0ca30c;}
+.report-chip.active{box-shadow:0 0 0 2px var(--line-strong) inset;}
+.report-chip.falta.active{box-shadow:0 0 0 2px var(--critical) inset;}
+.report-chip.pronto.active{box-shadow:0 0 0 2px #0ca30c inset;}
+.report-chip.nao.active{box-shadow:0 0 0 2px var(--muted) inset;}
 .report-bpm-breakdown{padding:6px 20px 4px;display:flex;flex-direction:column;gap:6px;}
 .report-bpm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--ink-2);
   background:var(--surface-2);border-radius:8px;padding:6px 10px;}
@@ -715,6 +720,8 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   // ---- report overlay: aggregate situação/guarnição across every location in this view ----
   let reportOpen = false;
   let reportRows = [];
+  let renderedRows = [];
+  let reportFilter = null;
   const reportOverlay = document.getElementById('reportOverlay');
   const reportList = document.getElementById('reportList');
   function statusOf(e){
@@ -739,10 +746,17 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       return (a.e.bairro||'').localeCompare(b.e.bairro||'') || (a.e.local||'').localeCompare(b.e.local||'');
     });
     document.getElementById('reportSummary').innerHTML = `
-      <div class="report-chip falta"><span class="n tabular">${falta}</span><span class="l">Falta</span></div>
-      <div class="report-chip nao"><span class="n tabular">${naoMarcado}</span><span class="l">Não marcado</span></div>
-      <div class="report-chip pronto"><span class="n tabular">${pronto}</span><span class="l">Pronto</span></div>
+      <button type="button" class="report-chip falta ${reportFilter==='falta'?'active':''}" data-filter="falta"><span class="n tabular">${falta}</span><span class="l">Falta</span></button>
+      <button type="button" class="report-chip nao ${reportFilter==='nao'?'active':''}" data-filter="nao"><span class="n tabular">${naoMarcado}</span><span class="l">Não marcado</span></button>
+      <button type="button" class="report-chip pronto ${reportFilter==='pronto'?'active':''}" data-filter="pronto"><span class="n tabular">${pronto}</span><span class="l">Pronto</span></button>
     `;
+    document.getElementById('reportSummary').querySelectorAll('.report-chip').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const f = btn.dataset.filter;
+        reportFilter = reportFilter===f ? null : f;
+        renderReport();
+      });
+    });
     const bpmListLocal = multi ? [...new Set(escolas.map(e=>e.bpm))].sort((a,b)=>parseInt(a)-parseInt(b)) : [];
     document.getElementById('reportBpmBreakdown').innerHTML = bpmListLocal.map(bpm=>{
       let f=0,p=0,n=0;
@@ -752,7 +766,8 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       });
       return `<div class="report-bpm-row"><span>${esc(DATA.bpmLabels[bpm])}</span><span><b class="falta">${f}</b> falta · <b class="nao">${n}</b> pendente · <b class="pronto">${p}</b> pronto</span></div>`;
     }).join('');
-    reportList.innerHTML = reportRows.length ? reportRows.map(({e,val}, idx)=>{
+    renderedRows = reportFilter ? reportRows.filter(({val})=> (val||'nao')===reportFilter) : reportRows;
+    reportList.innerHTML = renderedRows.length ? renderedRows.map(({e,val}, idx)=>{
       const statusLabel = val==='falta' ? 'Falta' : val==='pronto' ? 'Pronto' : 'Não marcado';
       const statusClass = val==='falta' ? 'falta' : val==='pronto' ? 'pronto' : 'nao';
       const data = situacaoDocs[situacaoDocId(e)] || {};
@@ -768,17 +783,17 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
         </div>
         <div class="report-updated">${esc(updated)}</div>
       </div>`;
-    }).join('') : `<div class="report-empty">Nenhum local nesta área.</div>`;
+    }).join('') : `<div class="report-empty">${reportFilter ? 'Nenhum local com esse status.' : 'Nenhum local nesta área.'}</div>`;
   }
   reportList.addEventListener('click', (ev)=>{
     const row = ev.target.closest('.report-row');
     if(!row) return;
-    const item = reportRows[parseInt(row.dataset.idx)];
+    const item = renderedRows[parseInt(row.dataset.idx)];
     if(!item) return;
     closeReport();
     openDetail(item.e, item.e.cia, ciaColorFor(item.e.cia));
   });
-  function openReport(){ reportOpen = true; renderReport(); reportOverlay.classList.add('open'); }
+  function openReport(){ reportOpen = true; reportFilter = null; renderReport(); reportOverlay.classList.add('open'); }
   function closeReport(){ reportOpen = false; reportOverlay.classList.remove('open'); }
   document.getElementById('reportBtn').addEventListener('click', openReport);
   document.getElementById('reportClose').addEventListener('click', closeReport);
