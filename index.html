@@ -606,20 +606,24 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
   });
 
   // ---- live "situação" ring on the marker itself (green=pronto, red=falta) ----
-  let situacaoMap = {};
+  // Situação/guarnição are tracked per turno (different officers each round),
+  // so the ring shown always reflects whichever turno is currently selected.
+  let situacaoDocs = {};
+  let refreshDetailTurnoUI = null;
   function applySituacaoRing(entry){
     const el = entry.layer.getElement();
     const ricon = el && el.querySelector('.ricon');
     if(!ricon) return;
-    const val = situacaoMap[situacaoDocId(entry.e)];
+    const data = situacaoDocs[situacaoDocId(entry.e)];
+    const val = data ? data['situacao'+turno] : null;
     ricon.classList.toggle('situacao-pronto', val==='pronto');
     ricon.classList.toggle('situacao-falta', val==='falta');
   }
   function refreshAllSituacaoRings(){ markerEntries.forEach(applySituacaoRing); }
   if(db){
     db.collection('status').onSnapshot(snap=>{
-      situacaoMap = {};
-      snap.forEach(doc=>{ situacaoMap[doc.id] = doc.data().situacao; });
+      situacaoDocs = {};
+      snap.forEach(doc=>{ situacaoDocs[doc.id] = doc.data(); });
       refreshAllSituacaoRings();
     }, err=>console.error('situação (live ring) indisponível:', err));
   }
@@ -630,6 +634,7 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
     document.getElementById('turno2Btn').classList.toggle('active', t==='2');
     markerEntries.forEach(({layer, e, color})=> layer.setIcon(makeIcon(e, color)));
     refreshAllSituacaoRings();
+    if(refreshDetailTurnoUI) refreshDetailTurnoUI();
     update();
   }
   document.getElementById('turno1Btn').addEventListener('click', ()=>setTurno('1'));
@@ -662,13 +667,13 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
         <dt>Status</dt><dd><span class="statusbadge ${statusOk?'ok':'warn'}">${statusOk?'✓':'⚠'} ${esc(e.status)}</span></dd>
       </dl>
       <div class="situacao-section">
-        <div class="situacao-label">Situação (compartilhada entre todos)</div>
+        <div class="situacao-label" id="situacaoSectionLabel">Situação</div>
         <div class="situacao-group">
           <button type="button" class="situacao-btn falta" data-val="falta">Falta</button>
           <button type="button" class="situacao-btn pronto" data-val="pronto">Pronto</button>
         </div>
         <div class="situacao-meta" id="situacaoMeta">Carregando…</div>
-        <div class="situacao-label" style="margin-top:14px;">Guarnição (GU)</div>
+        <div class="situacao-label" id="guarnicaoSectionLabel" style="margin-top:14px;">Guarnição (GU)</div>
         <textarea id="guarnicaoInput" class="guarnicao-input" rows="2" placeholder="Nomes dos policiais na guarnição…"></textarea>
         <button type="button" class="situacao-save" id="guarnicaoSave">Salvar guarnição</button>
         <div class="situacao-meta" id="guarnicaoMeta"></div>
@@ -676,8 +681,11 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
     detail.classList.add('open');
 
     if(situacaoUnsub){ situacaoUnsub(); situacaoUnsub=null; }
+    refreshDetailTurnoUI = null;
     const btns = [...detailBody.querySelectorAll('.situacao-btn')];
     const metaEl = document.getElementById('situacaoMeta');
+    const sectionLabel = document.getElementById('situacaoSectionLabel');
+    const guarnicaoLabel = document.getElementById('guarnicaoSectionLabel');
     const guarnicaoInput = document.getElementById('guarnicaoInput');
     const guarnicaoMeta = document.getElementById('guarnicaoMeta');
     const guarnicaoSaveBtn = document.getElementById('guarnicaoSave');
@@ -689,29 +697,41 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
       return;
     }
     const docRef = db.collection('status').doc(situacaoDocId(e));
-    let currentSituacao = null;
+    let lastData = {};
+
+    function render(){
+      const suf = turno;
+      sectionLabel.textContent = `Situação — ${suf}º turno (compartilhada)`;
+      guarnicaoLabel.textContent = `Guarnição (GU) — ${suf}º turno`;
+      const val = lastData['situacao'+suf] || null;
+      btns.forEach(b=>b.classList.toggle('active', b.dataset.val===val));
+      const ts = lastData['updatedAt'+suf];
+      metaEl.textContent = ts ? 'Atualizado ' + timeAgo(ts.toDate()) : 'Ainda não marcado';
+      guarnicaoMeta.textContent = '';
+      if(document.activeElement !== guarnicaoInput){
+        guarnicaoInput.value = lastData['guarnicao'+suf] || '';
+      }
+    }
+    refreshDetailTurnoUI = render;
+
     btns.forEach(b=>b.addEventListener('click', ()=>{
-      const next = currentSituacao===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
+      const suf = turno;
+      const curVal = lastData['situacao'+suf] || null;
+      const next = curVal===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
       metaEl.textContent = 'Salvando…';
-      docRef.set({ situacao: next, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, {merge:true})
+      docRef.set({ ['situacao'+suf]: next, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp() }, {merge:true})
         .catch(err=>{ metaEl.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
     }));
     guarnicaoSaveBtn.addEventListener('click', ()=>{
+      const suf = turno;
       guarnicaoMeta.textContent = 'Salvando…';
-      docRef.set({ guarnicao: guarnicaoInput.value.slice(0,500), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, {merge:true})
+      docRef.set({ ['guarnicao'+suf]: guarnicaoInput.value.slice(0,500), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp() }, {merge:true})
         .then(()=>{ guarnicaoMeta.textContent = 'Guarnição salva.'; })
         .catch(err=>{ guarnicaoMeta.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
     });
     situacaoUnsub = docRef.onSnapshot(snap=>{
-      const data = snap.data();
-      currentSituacao = data ? data.situacao : null;
-      btns.forEach(b=>b.classList.toggle('active', b.dataset.val===currentSituacao));
-      metaEl.textContent = data && data.updatedAt
-        ? 'Atualizado ' + timeAgo(data.updatedAt.toDate())
-        : 'Ainda não marcado';
-      if(document.activeElement !== guarnicaoInput){
-        guarnicaoInput.value = (data && data.guarnicao) || '';
-      }
+      lastData = snap.data() || {};
+      render();
     }, err=>{
       metaEl.textContent = 'Situação indisponível no momento.';
       console.error(err);
@@ -720,6 +740,7 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
   document.getElementById('detailClose').addEventListener('click', ()=>{
     detail.classList.remove('open');
     if(situacaoUnsub){ situacaoUnsub(); situacaoUnsub=null; }
+    refreshDetailTurnoUI = null;
   });
 
   // ---- filters ----

@@ -2,16 +2,22 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Shared "presente no local" status (falta/pronto, opcional - pode ser
-    // ausente para "nao marcado") plus a free-text guarnicao (officer names)
-    // per ponto de votacao. Public read (anyone with the map link can see
-    // current status) and public write, but only ever writing these fields
-    // with validated shapes - no other collection or field can be touched.
+    // ausente para "nao marcado") plus a free-text guarnicao (officer names),
+    // tracked SEPARATELY per turno (1 and 2 use different officers) - hence
+    // situacao1/guarnicao1/updatedAt1 and situacao2/guarnicao2/updatedAt2.
+    // Public read (anyone with the map link can see current status) and
+    // public write, but only ever writing these fields with validated shapes
+    // - no other collection or field can be touched.
     match /status/{docId} {
       allow read: if true;
-      allow create, update: if request.resource.data.keys().hasOnly(['situacao', 'guarnicao', 'updatedAt'])
-        && (!('situacao' in request.resource.data) || request.resource.data.situacao in ['falta', 'pronto'])
-        && (!('guarnicao' in request.resource.data) ||
-            (request.resource.data.guarnicao is string && request.resource.data.guarnicao.size() <= 500));
+      allow create, update: if request.resource.data.keys().hasOnly(
+          ['situacao1', 'guarnicao1', 'updatedAt1', 'situacao2', 'guarnicao2', 'updatedAt2'])
+        && (!('situacao1' in request.resource.data) || request.resource.data.situacao1 in ['falta', 'pronto'])
+        && (!('situacao2' in request.resource.data) || request.resource.data.situacao2 in ['falta', 'pronto'])
+        && (!('guarnicao1' in request.resource.data) ||
+            (request.resource.data.guarnicao1 is string && request.resource.data.guarnicao1.size() <= 500))
+        && (!('guarnicao2' in request.resource.data) ||
+            (request.resource.data.guarnicao2 is string && request.resource.data.guarnicao2.size() <= 500));
       allow delete: if false;
     }
     match /{document=**} {
