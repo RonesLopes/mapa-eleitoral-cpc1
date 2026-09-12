@@ -289,7 +289,16 @@ a{color:inherit;}
 .situacao-btn:hover{background:var(--surface-2);}
 .situacao-btn.falta.active{background:var(--critical);color:var(--on-critical);border-color:var(--critical);}
 .situacao-btn.pronto.active{background:#0ca30c;color:#fff;border-color:#0ca30c;}
-.situacao-meta{margin-top:8px;font-size:11px;color:var(--muted);}
+.situacao-meta{margin-top:8px;font-size:11px;color:var(--muted);min-height:14px;}
+.guarnicao-input{
+  width:100%;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+  border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical;margin-bottom:8px;
+}
+.situacao-save{
+  border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);border-radius:8px;
+  padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--font-body);
+}
+.situacao-save:hover{background:var(--surface);}
 @media (max-width:760px){
   .detail{top:auto;bottom:0;left:0;right:0;width:auto;height:auto;max-height:72vh;
     border-left:none;border-top:1px solid var(--line);border-radius:16px 16px 0 0;transform:translateY(105%);}
@@ -637,30 +646,50 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
           <button type="button" class="situacao-btn pronto" data-val="pronto">Pronto</button>
         </div>
         <div class="situacao-meta" id="situacaoMeta">Carregando…</div>
+        <div class="situacao-label" style="margin-top:14px;">Guarnição (GU)</div>
+        <textarea id="guarnicaoInput" class="guarnicao-input" rows="2" placeholder="Nomes dos policiais na guarnição…"></textarea>
+        <button type="button" class="situacao-save" id="guarnicaoSave">Salvar guarnição</button>
+        <div class="situacao-meta" id="guarnicaoMeta"></div>
       </div>`;
     detail.classList.add('open');
 
     if(situacaoUnsub){ situacaoUnsub(); situacaoUnsub=null; }
     const btns = [...detailBody.querySelectorAll('.situacao-btn')];
     const metaEl = document.getElementById('situacaoMeta');
+    const guarnicaoInput = document.getElementById('guarnicaoInput');
+    const guarnicaoMeta = document.getElementById('guarnicaoMeta');
+    const guarnicaoSaveBtn = document.getElementById('guarnicaoSave');
     if(!db){
       metaEl.textContent = 'Situação indisponível no momento.';
       btns.forEach(b=>b.disabled = true);
+      guarnicaoInput.disabled = true;
+      guarnicaoSaveBtn.disabled = true;
       return;
     }
     const docRef = db.collection('status').doc(situacaoDocId(e));
+    let currentSituacao = null;
     btns.forEach(b=>b.addEventListener('click', ()=>{
+      const next = currentSituacao===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
       metaEl.textContent = 'Salvando…';
-      docRef.set({ situacao: b.dataset.val, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      docRef.set({ situacao: next, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, {merge:true})
         .catch(err=>{ metaEl.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
     }));
+    guarnicaoSaveBtn.addEventListener('click', ()=>{
+      guarnicaoMeta.textContent = 'Salvando…';
+      docRef.set({ guarnicao: guarnicaoInput.value.slice(0,500), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, {merge:true})
+        .then(()=>{ guarnicaoMeta.textContent = 'Guarnição salva.'; })
+        .catch(err=>{ guarnicaoMeta.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
+    });
     situacaoUnsub = docRef.onSnapshot(snap=>{
       const data = snap.data();
-      const val = data ? data.situacao : null;
-      btns.forEach(b=>b.classList.toggle('active', b.dataset.val===val));
+      currentSituacao = data ? data.situacao : null;
+      btns.forEach(b=>b.classList.toggle('active', b.dataset.val===currentSituacao));
       metaEl.textContent = data && data.updatedAt
         ? 'Atualizado ' + timeAgo(data.updatedAt.toDate())
         : 'Ainda não marcado';
+      if(document.activeElement !== guarnicaoInput){
+        guarnicaoInput.value = (data && data.guarnicao) || '';
+      }
     }, err=>{
       metaEl.textContent = 'Situação indisponível no momento.';
       console.error(err);
