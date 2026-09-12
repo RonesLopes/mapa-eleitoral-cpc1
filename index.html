@@ -444,7 +444,7 @@ function renderApp(bpmList){
   const headerSub = multi ? 'Todos os batalhões — CPC I' : DATA.bpmLabels[bpmList[0]];
   const footnoteText = multi
     ? `Fonte: O.S. 324 — Operação Eleições 2026. Link de gerência geral — vê e filtra todos os batalhões do CPC I.`
-    : `Fonte: O.S. 324 — Operação Eleições 2026. Link travado no ${bpmList[0]}º BPM — <a href="${location.pathname}">ver todos os batalhões</a>.`;
+    : `Fonte: O.S. 324 — Operação Eleições 2026. Link de acesso exclusivo ao ${bpmList[0]}º BPM.`;
 
   document.getElementById('root').innerHTML = `
     <div class="app">
