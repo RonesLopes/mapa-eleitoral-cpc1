@@ -316,13 +316,22 @@ function titleCasePt(s){
 }
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtInt(n){return n==null?'—':n.toLocaleString('pt-BR');}
+function ciaOrdinal(cia){
+  const m = (cia||'').match(/\d+/);
+  return m ? parseInt(m[0]) : 'x';
+}
+const ORDINAL_COLOR = {1:'var(--cia-1)',2:'var(--cia-2)',3:'var(--cia-3)',4:'var(--cia-4)','x':'var(--cia-x)'};
+const ORDINAL_LABEL = {1:'1ª CIA',2:'2ª CIA',3:'3ª CIA',4:'4ª CIA','x':'Não informada'};
 
 const params = new URLSearchParams(location.search);
 const bpmParam = (params.get('bpm')||'').trim();
+const isAdmin = params.get('admin')==='1';
 const validBpms = Object.keys(DATA.bpmLabels);
 
-if(validBpms.includes(bpmParam)){
-  renderApp(bpmParam);
+if(isAdmin){
+  renderApp(validBpms.slice());
+}else if(validBpms.includes(bpmParam)){
+  renderApp([bpmParam]);
 }else{
   renderChooser();
 }
@@ -347,46 +356,63 @@ function renderChooser(){
     </div>`;
 }
 
-function renderApp(bpm){
-  const bairros = DATA.bairros.filter(b=>b.bpm===bpm);
-  const escolas = DATA.escolas.filter(e=>e.bpm===bpm);
+function renderApp(bpmList){
+  const multi = bpmList.length > 1;
+  const bairros = DATA.bairros.filter(b=>bpmList.includes(b.bpm));
+  const escolas = DATA.escolas.filter(e=>bpmList.includes(e.bpm));
   const located = escolas.filter(e=>e.lat!=null && e.lon!=null);
   const missing = escolas.filter(e=>e.lat==null || e.lon==null);
 
   const bairroToCia = {};
   escolas.forEach(e=>{ bairroToCia[e.bairroKey] = e.cia; });
 
-  const ciaSet = [...new Set(escolas.map(e=>e.cia))];
-  const numericCia = ciaSet.filter(c=>/\d/.test(c)).sort((a,b)=>parseInt(a)-parseInt(b));
-  const otherCia = ciaSet.filter(c=>!/\d/.test(c));
-  const ciaColor = {};
-  const palette = ['var(--cia-1)','var(--cia-2)','var(--cia-3)','var(--cia-4)'];
-  numericCia.forEach((c,i)=>{ ciaColor[c] = palette[i] || 'var(--cia-x)'; });
-  otherCia.forEach(c=>{ ciaColor[c] = 'var(--cia-x)'; });
-  const ciaOrder = [...numericCia, ...otherCia];
+  // color is always by ordinal position of the company within its own battalion
+  // (1st company of any battalion = blue, 2nd = orange, ...) so the legend stays
+  // small even when several battalions are shown together.
+  function ciaColorFor(cia){ return ORDINAL_COLOR[ciaOrdinal(cia)]; }
+
+  const ordinalsPresent = [...new Set(escolas.map(e=>ciaOrdinal(e.cia)))]
+    .sort((a,b)=> (a==='x'?99:a) - (b==='x'?99:b));
 
   // ---- sidebar markup ----
-  const bpmLabel = DATA.bpmLabels[bpm];
   const totalEleitores = escolas.reduce((a,e)=>a + (e.eleitoresNum||0), 0);
   const polyKeys = new Set(bairros.map(b=>b.key));
   const extraBairros = [...new Set(escolas.filter(e=>!polyKeys.has(e.bairroKey)).map(e=>e.bairroKey))]
-    .map(key=>({key, bairro: escolas.find(e=>e.bairroKey===key).bairro}));
-  const bairroList = [...bairros, ...extraBairros].sort((a,b)=>a.bairro.localeCompare(b.bairro));
+    .map(key=>({key, bairro: escolas.find(e=>e.bairroKey===key).bairro, bpm: escolas.find(e=>e.bairroKey===key).bpm}));
+  const bairroList = [...bairros, ...extraBairros].sort((a,b)=>{
+    if(multi && a.bpm!==b.bpm) return parseInt(a.bpm)-parseInt(b.bpm);
+    return a.bairro.localeCompare(b.bairro);
+  });
   const bairroCountTotal = new Set(escolas.map(e=>e.bairroKey)).size;
 
-  const ciaRows = ciaOrder.map(c=>{
-    const count = escolas.filter(e=>e.cia===c).length;
-    const color = ciaColor[c];
-    const label = c==='CIA não informada' ? 'Não informada' : c;
-    return `<label class="check-row"><input type="checkbox" class="cia-check" data-cia="${esc(c)}" checked>
+  const ciaCompositeKeys = [...new Set(escolas.map(e=>e.bpm+'|'+e.cia))].sort((ka,kb)=>{
+    const [bpmA,ciaA] = ka.split('|'), [bpmB,ciaB] = kb.split('|');
+    if(bpmA!==bpmB) return parseInt(bpmA)-parseInt(bpmB);
+    return ciaOrdinal(ciaA)===ciaOrdinal(ciaB) ? 0 : (ciaOrdinal(ciaA)==='x'?1:(ciaOrdinal(ciaB)==='x'?-1:ciaOrdinal(ciaA)-ciaOrdinal(ciaB)));
+  });
+
+  const ciaRows = ciaCompositeKeys.map(key=>{
+    const [bpm, cia] = key.split('|');
+    const count = escolas.filter(e=>(e.bpm+'|'+e.cia)===key).length;
+    const color = ciaColorFor(cia);
+    const ciaLabel = cia==='CIA não informada' ? 'Não informada' : cia;
+    const label = multi ? `${bpm}º BPM · ${ciaLabel}` : ciaLabel;
+    return `<label class="check-row"><input type="checkbox" class="cia-check" data-ciakey="${esc(key)}" checked>
       <span class="swatch" style="background:${color}"></span>
       <span class="name">${esc(label)}</span><span class="count tabular">${count}</span></label>`;
   }).join('');
 
+  const bpmRows = multi ? bpmList.map(bpm=>{
+    const count = escolas.filter(e=>e.bpm===bpm).length;
+    return `<label class="check-row"><input type="checkbox" class="bpm-check" data-bpm="${esc(bpm)}" checked>
+      <span class="name">${esc(DATA.bpmLabels[bpm])}</span><span class="count tabular">${count}</span></label>`;
+  }).join('') : '';
+
   const bairroRows = bairroList.map(b=>{
     const count = escolas.filter(e=>e.bairroKey===b.key).length;
+    const label = multi ? `${b.bpm}º BPM — ${titleCasePt(b.bairro)}` : titleCasePt(b.bairro);
     return `<label class="check-row"><input type="checkbox" class="bairro-check" data-key="${esc(b.key)}" checked>
-      <span class="name">${esc(titleCasePt(b.bairro))}</span><span class="count tabular">${count}</span></label>`;
+      <span class="name">${esc(label)}</span><span class="count tabular">${count}</span></label>`;
   }).join('');
 
   const resourceCatsPresent = Object.keys(DATA.resourceLabels).filter(k=>
@@ -403,8 +429,19 @@ function renderApp(bpm){
 
   const missingBox = missing.length ? `<div class="filter-group"><div class="missing-box">
     <div class="mh">⚠ ${missing.length} local(is) sem coordenada</div>
-    ${missing.map(e=>`<div class="missing-row"><b>${esc(e.local)}</b><br>${esc(titleCasePt(e.bairro))} · ${esc(e.cia)} · ${fmtInt(e.eleitoresNum)} eleitores</div>`).join('')}
+    ${missing.map(e=>`<div class="missing-row"><b>${esc(e.local)}</b><br>${multi?esc(DATA.bpmLabels[e.bpm])+' · ':''}${esc(titleCasePt(e.bairro))} · ${esc(e.cia)} · ${fmtInt(e.eleitoresNum)} eleitores</div>`).join('')}
   </div></div>` : '';
+
+  const bpmFilterGroup = multi ? `<div class="filter-group">
+          <h3>Batalhão <button id="resetBpm" type="button">todos</button></h3>
+          <div class="checklist">${bpmRows}</div>
+        </div>` : '';
+
+  const headerTitle = multi ? 'Gerência Geral' : `${bpmList[0]}º BPM`;
+  const headerSub = multi ? 'Todos os batalhões — CPC I' : DATA.bpmLabels[bpmList[0]];
+  const footnoteText = multi
+    ? `Fonte: O.S. 324 — Operação Eleições 2026. Link de gerência geral — vê e filtra todos os batalhões do CPC I.`
+    : `Fonte: O.S. 324 — Operação Eleições 2026. Link travado no ${bpmList[0]}º BPM — <a href="${location.pathname}">ver todos os batalhões</a>.`;
 
   document.getElementById('root').innerHTML = `
     <div class="app">
@@ -412,14 +449,15 @@ function renderApp(bpm){
       <aside class="sidebar" id="sidebar">
         <div class="hdr">
           <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
-          <h1>${bpm}º BPM</h1>
-          <p>${esc(bpmLabel)}</p>
+          <h1>${esc(headerTitle)}</h1>
+          <p>${esc(headerSub)}</p>
         </div>
         <div class="stats">
           <div class="stat"><span class="v tabular">${escolas.length}</span><span class="l">Locais</span></div>
           <div class="stat"><span class="v tabular">${bairroCountTotal}</span><span class="l">Bairros</span></div>
           <div class="stat"><span class="v tabular">${fmtInt(totalEleitores)}</span><span class="l">Eleitores</span></div>
         </div>
+        ${bpmFilterGroup}
         <div class="filter-group">
           <h3>Companhia <button id="resetCia" type="button">todas</button></h3>
           <div class="checklist">${ciaRows}</div>
@@ -434,7 +472,7 @@ function renderApp(bpm){
           <div class="checklist">${bairroRows}</div>
         </div>
         ${missingBox}
-        <div class="footnote">Fonte: O.S. 324 — Operação Eleições 2026. Link travado no ${bpm}º BPM — <a href="${location.pathname}">ver todos os batalhões</a>.</div>
+        <div class="footnote">${footnoteText}</div>
       </aside>
       <main class="mapwrap" id="mapwrap">
         <div id="map"></div>
@@ -447,11 +485,11 @@ function renderApp(bpm){
         <div class="legend" id="legend">
           <div class="lhead" id="legendToggle">Legenda <span class="chev">▾</span></div>
           <div class="lbody">
-            ${ciaOrder.map(c=>`<div class="lrow"><span class="swatch" style="background:${ciaColor[c]}"></span>${esc(c==='CIA não informada'?'Não informada':c)}<span class="count tabular">${escolas.filter(e=>e.cia===c).length}</span></div>`).join('')}
+            ${ordinalsPresent.map(ord=>`<div class="lrow"><span class="swatch" style="background:${ORDINAL_COLOR[ord]}"></span>${esc(ORDINAL_LABEL[ord])}<span class="count tabular">${escolas.filter(e=>ciaOrdinal(e.cia)===ord).length}</span></div>`).join('')}
             <div class="lsec">
               ${Object.keys(DATA.resourceLabels).filter(k=>k!=='outro').map(k=>`<div class="lrow"><img class="lthumb" src="icons/${k}.png" alt="">${esc(DATA.resourceLabels[k])}</div>`).join('')}
             </div>
-            <div class="lnote">Cor = Companhia responsável. Ícone = recurso destacado no turno selecionado.</div>
+            <div class="lnote">Cor = ordem da Companhia no batalhão (1ª, 2ª...). Ícone = recurso destacado no turno selecionado.</div>
           </div>
         </div>
         <div class="zoomctl">
@@ -467,7 +505,7 @@ function renderApp(bpm){
     </div>`;
 
   try{
-    wireApp({bpm, bairros, escolas, located, missing, bairroToCia, ciaColor});
+    wireApp({multi, bairros, escolas, located, missing, bairroToCia, ciaColorFor});
   }catch(err){
     const mapEl = document.getElementById('map');
     if(mapEl) mapEl.innerHTML = `<div style="padding:24px;color:var(--ink);font-size:13px;">Não foi possível carregar o mapa (${esc(err.message||String(err))}). Tente recarregar a página ou abrir em outro navegador.</div>`;
@@ -475,7 +513,7 @@ function renderApp(bpm){
   }
 }
 
-function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
+function wireApp({bairros, escolas, located, bairroToCia, ciaColorFor}){
   const detail = document.getElementById('detail');
   const detailBody = document.getElementById('detailBody');
   const visibleCountEl = document.getElementById('visibleCount');
@@ -488,10 +526,10 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
 
   const bairroEntries = bairros.map(b=>{
     const cia = bairroToCia[b.key];
-    const color = cia ? ciaColor[cia] : 'var(--cia-x)';
+    const color = cia ? ciaColorFor(cia) : 'var(--cia-x)';
     const layer = L.polygon(b.coords, {color, weight:1.6, fillColor:color, fillOpacity:0.20}).addTo(map);
     layer.on('click', ()=> map.fitBounds(layer.getBounds(), {padding:[24,24]}));
-    return {layer, key:b.key, cia};
+    return {layer, key:b.key, bpm:b.bpm, cia};
   });
 
   let turno = '1';
@@ -508,7 +546,7 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
   }
 
   const markerEntries = located.map(e=>{
-    const color = ciaColor[e.cia] || 'var(--cia-x)';
+    const color = ciaColorFor(e.cia);
     const layer = L.marker([e.lat, e.lon], { icon: makeIcon(e, color) }).addTo(map);
     layer.on('click', ()=> openDetail(e, e.cia, color));
     return {layer, e, color};
@@ -541,6 +579,7 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
       <h2>${esc(e.local)}</h2>
       <span class="ciachip"><span class="swatch" style="background:${color}"></span>${esc(cia==='CIA não informada'?'Companhia não informada':cia)}</span>
       <dl>
+        <dt>Batalhão</dt><dd>${esc(DATA.bpmLabels[e.bpm])}</dd>
         <dt>Endereço</dt><dd>${esc(e.endereco)||'—'}</dd>
         <dt>Eleitores</dt><dd class="tabular">${fmtInt(e.eleitoresNum)}</dd>
         <dt>1º turno</dt><dd>${esc(e.turno1)||'—'}</dd>
@@ -556,30 +595,33 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
   const ciaChecks = [...document.querySelectorAll('.cia-check')];
   const bairroChecks = [...document.querySelectorAll('.bairro-check')];
   const recursoChecks = [...document.querySelectorAll('.recurso-check')];
+  const bpmChecks = [...document.querySelectorAll('.bpm-check')];
   const searchInput = document.getElementById('searchLocal');
 
   function currentFilters(){
-    const ciaOn = {}; ciaChecks.forEach(c=>ciaOn[c.dataset.cia]=c.checked);
+    const ciaOn = {}; ciaChecks.forEach(c=>ciaOn[c.dataset.ciakey]=c.checked);
     const bairroOn = {}; bairroChecks.forEach(c=>bairroOn[c.dataset.key]=c.checked);
     const recursoOn = {}; recursoChecks.forEach(c=>recursoOn[c.dataset.recurso]=c.checked);
+    const bpmOn = {}; bpmChecks.forEach(c=>bpmOn[c.dataset.bpm]=c.checked);
     const q = norm(searchInput.value||'');
-    return {ciaOn, bairroOn, recursoOn, q};
+    return {ciaOn, bairroOn, recursoOn, bpmOn, q};
   }
 
   function update(){
-    const {ciaOn, bairroOn, recursoOn, q} = currentFilters();
+    const {ciaOn, bairroOn, recursoOn, bpmOn, q} = currentFilters();
     let visible = 0;
     markerEntries.forEach(({layer, e})=>{
       const cat = (turno==='1' ? e.turno1Cat : e.turno2Cat) || '__none__';
-      const on = (ciaOn[e.cia]!==false) && (bairroOn[e.bairroKey]!==false) && (recursoOn[cat]!==false) &&
-        (!q || norm(e.local).includes(q) || norm(e.endereco).includes(q));
+      const on = (ciaOn[e.bpm+'|'+e.cia]!==false) && (bairroOn[e.bairroKey]!==false) && (recursoOn[cat]!==false) &&
+        (bpmOn[e.bpm]!==false) && (!q || norm(e.local).includes(q) || norm(e.endereco).includes(q));
       if(on){ if(!map.hasLayer(layer)) layer.addTo(map); visible++; }
       else if(map.hasLayer(layer)) map.removeLayer(layer);
     });
-    bairroEntries.forEach(({layer, key, cia})=>{
+    bairroEntries.forEach(({layer, key, bpm, cia})=>{
       const bVisible = bairroOn[key] !== false;
-      const cVisible = !cia || ciaOn[cia] !== false;
-      const on = bVisible && cVisible;
+      const cVisible = !cia || ciaOn[bpm+'|'+cia] !== false;
+      const pVisible = bpmOn[bpm] !== false;
+      const on = bVisible && cVisible && pVisible;
       layer.setStyle({opacity:on?1:0.10, fillOpacity:on?0.20:0.02});
     });
     visibleCountEl.textContent = visible;
@@ -588,10 +630,13 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
   ciaChecks.forEach(c=>c.addEventListener('change', update));
   bairroChecks.forEach(c=>c.addEventListener('change', update));
   recursoChecks.forEach(c=>c.addEventListener('change', update));
+  bpmChecks.forEach(c=>c.addEventListener('change', update));
   searchInput.addEventListener('input', update);
   document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>c.checked=true); update();});
   document.getElementById('resetBairro').addEventListener('click', ()=>{bairroChecks.forEach(c=>c.checked=true); update();});
   document.getElementById('resetRecurso').addEventListener('click', ()=>{recursoChecks.forEach(c=>c.checked=true); update();});
+  const resetBpmBtn = document.getElementById('resetBpm');
+  if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update();});
 
   // ---- mobile sidebar toggle ----
   const sidebar = document.getElementById('sidebar');
