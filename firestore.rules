@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared "presente no local" status (falta/pronto) per ponto de votacao.
+    // Public read (anyone with the map link can see current status) and
+    // public write, but only ever writing exactly these two fields with a
+    // validated enum value - no other collection or field can be touched.
+    match /status/{docId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['situacao', 'updatedAt'])
+        && request.resource.data.situacao in ['falta', 'pronto'];
+      allow delete: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
