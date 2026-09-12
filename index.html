@@ -118,6 +118,9 @@ a{color:inherit;}
   max-height:100vh;overflow-y:auto;
   position:relative;z-index:6;
 }
+@media (max-width:760px){
+  .sidebar{z-index:660;}
+}
 .eyebrow{
   font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--accent);font-weight:600;
@@ -195,7 +198,7 @@ a{color:inherit;}
 .legend .lrow .count{margin-left:auto;font-family:var(--font-mono);color:var(--muted);font-size:11px;}
 .legend .lnote{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);font-size:10.5px;line-height:1.4;}
 .legend .lsec{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
-.legend .lthumb{width:18px;height:18px;border-radius:50%;object-fit:cover;flex:none;background:var(--surface-2);}
+.lthumb{width:18px;height:18px;border-radius:50%;object-fit:cover;flex:none;background:var(--surface-2);}
 @media (max-width:760px){
   .legend{max-width:min(72vw,260px);}
 }
@@ -231,7 +234,7 @@ a{color:inherit;}
 .topbadge .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);}
 
 .filtoggle{display:none;}
-.backdrop{display:none;position:fixed;inset:0;background:rgba(10,10,5,.35);z-index:640;}
+.backdrop{display:none;position:fixed;inset:0;background:rgba(10,10,5,.35);z-index:655;}
 .backdrop.show{display:block;}
 @media (max-width:760px){
   .filtoggle{
@@ -386,6 +389,18 @@ function renderApp(bpm){
       <span class="name">${esc(titleCasePt(b.bairro))}</span><span class="count tabular">${count}</span></label>`;
   }).join('');
 
+  const resourceCatsPresent = Object.keys(DATA.resourceLabels).filter(k=>
+    escolas.some(e=>e.turno1Cat===k || e.turno2Cat===k));
+  const hasNoResource = escolas.some(e=>!e.turno1Cat || !e.turno2Cat);
+  const resourceRows = resourceCatsPresent.map(k=>{
+    const count = escolas.filter(e=>e.turno1Cat===k || e.turno2Cat===k).length;
+    return `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="${esc(k)}" checked>
+      <img class="lthumb" src="icons/${k}.png" alt="">
+      <span class="name">${esc(DATA.resourceLabels[k])}</span><span class="count tabular">${count}</span></label>`;
+  }).join('') + (hasNoResource ? `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="__none__" checked>
+      <span class="swatch" style="background:var(--cia-x)"></span>
+      <span class="name">Sem recurso definido</span><span class="count tabular">${escolas.filter(e=>!e.turno1Cat||!e.turno2Cat).length}</span></label>` : '');
+
   const missingBox = missing.length ? `<div class="filter-group"><div class="missing-box">
     <div class="mh">⚠ ${missing.length} local(is) sem coordenada</div>
     ${missing.map(e=>`<div class="missing-row"><b>${esc(e.local)}</b><br>${esc(titleCasePt(e.bairro))} · ${esc(e.cia)} · ${fmtInt(e.eleitoresNum)} eleitores</div>`).join('')}
@@ -408,6 +423,10 @@ function renderApp(bpm){
         <div class="filter-group">
           <h3>Companhia <button id="resetCia" type="button">todas</button></h3>
           <div class="checklist">${ciaRows}</div>
+        </div>
+        <div class="filter-group">
+          <h3>Recurso (turno atual) <button id="resetRecurso" type="button">todos</button></h3>
+          <div class="checklist">${resourceRows}</div>
         </div>
         <div class="filter-group">
           <h3>Bairro <button id="resetBairro" type="button">todos</button></h3>
@@ -500,6 +519,7 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
     document.getElementById('turno1Btn').classList.toggle('active', t==='1');
     document.getElementById('turno2Btn').classList.toggle('active', t==='2');
     markerEntries.forEach(({layer, e, color})=> layer.setIcon(makeIcon(e, color)));
+    update();
   }
   document.getElementById('turno1Btn').addEventListener('click', ()=>setTurno('1'));
   document.getElementById('turno2Btn').addEventListener('click', ()=>setTurno('2'));
@@ -535,20 +555,23 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
   // ---- filters ----
   const ciaChecks = [...document.querySelectorAll('.cia-check')];
   const bairroChecks = [...document.querySelectorAll('.bairro-check')];
+  const recursoChecks = [...document.querySelectorAll('.recurso-check')];
   const searchInput = document.getElementById('searchLocal');
 
   function currentFilters(){
     const ciaOn = {}; ciaChecks.forEach(c=>ciaOn[c.dataset.cia]=c.checked);
     const bairroOn = {}; bairroChecks.forEach(c=>bairroOn[c.dataset.key]=c.checked);
+    const recursoOn = {}; recursoChecks.forEach(c=>recursoOn[c.dataset.recurso]=c.checked);
     const q = norm(searchInput.value||'');
-    return {ciaOn, bairroOn, q};
+    return {ciaOn, bairroOn, recursoOn, q};
   }
 
   function update(){
-    const {ciaOn, bairroOn, q} = currentFilters();
+    const {ciaOn, bairroOn, recursoOn, q} = currentFilters();
     let visible = 0;
     markerEntries.forEach(({layer, e})=>{
-      const on = (ciaOn[e.cia]!==false) && (bairroOn[e.bairroKey]!==false) &&
+      const cat = (turno==='1' ? e.turno1Cat : e.turno2Cat) || '__none__';
+      const on = (ciaOn[e.cia]!==false) && (bairroOn[e.bairroKey]!==false) && (recursoOn[cat]!==false) &&
         (!q || norm(e.local).includes(q) || norm(e.endereco).includes(q));
       if(on){ if(!map.hasLayer(layer)) layer.addTo(map); visible++; }
       else if(map.hasLayer(layer)) map.removeLayer(layer);
@@ -564,9 +587,11 @@ function wireApp({bairros, escolas, located, bairroToCia, ciaColor}){
 
   ciaChecks.forEach(c=>c.addEventListener('change', update));
   bairroChecks.forEach(c=>c.addEventListener('change', update));
+  recursoChecks.forEach(c=>c.addEventListener('change', update));
   searchInput.addEventListener('input', update);
   document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>c.checked=true); update();});
   document.getElementById('resetBairro').addEventListener('click', ()=>{bairroChecks.forEach(c=>c.checked=true); update();});
+  document.getElementById('resetRecurso').addEventListener('click', ()=>{recursoChecks.forEach(c=>c.checked=true); update();});
 
   // ---- mobile sidebar toggle ----
   const sidebar = document.getElementById('sidebar');
