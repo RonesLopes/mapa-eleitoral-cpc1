@@ -639,6 +639,7 @@ function renderChooser(){
 }
 
 function renderApp(bpmList){
+  try{
   const multi = bpmList.length > 1;
   const bairros = DATA.bairros.filter(b=>bpmList.includes(b.bpm));
   const escolas = DATA.escolas.filter(e=>bpmList.includes(e.bpm));
@@ -803,12 +804,28 @@ function renderApp(bpmList){
       </div>
     </div>`;
 
-  try{
-    wireApp({multi, bairros, escolas, located, missing, bairroToCia, ciaColorFor});
-  }catch(err){
-    const mapEl = document.getElementById('map');
-    if(mapEl) mapEl.innerHTML = `<div style="padding:24px;color:var(--ink);font-size:13px;">Não foi possível carregar o mapa (${esc(err.message||String(err))}). Tente recarregar a página ou abrir em outro navegador.</div>`;
-    console.error(err);
+  // ---- defer the heavy Leaflet work (markers/polygons) two frames so the browser ----
+  // ---- actually paints the sidebar/shell above before the main thread gets busy — ----
+  // ---- otherwise, on slow phones, the page can look frozen on the old screen for a while. ----
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      try{
+        wireApp({multi, bairros, escolas, located, missing, bairroToCia, ciaColorFor});
+      }catch(err){
+        const mapEl = document.getElementById('map');
+        if(mapEl) mapEl.innerHTML = `<div style="padding:24px;color:var(--ink);font-size:13px;">Não foi possível carregar o mapa (${esc(err.message||String(err))}). Tente recarregar a página ou abrir em outro navegador.</div>`;
+        console.error(err);
+      }
+    });
+  });
+  }catch(outerErr){
+    // guards against getting stuck on the boot spinner forever if anything above throws
+    // before #root's HTML is replaced — surface a retry instead of a silent freeze.
+    console.error('renderApp failed', outerErr);
+    const root = document.getElementById('root');
+    if(root) root.innerHTML = `<div class="boot-loading"><div>Não foi possível carregar esta visão do mapa (${esc(outerErr.message||String(outerErr))}).</div><button type="button" id="retryBootBtn" style="margin-top:16px;padding:10px 20px;border-radius:8px;border:1px solid #999;background:#fff;cursor:pointer;font-size:14px;">Tentar novamente</button></div>`;
+    const retryBtn = document.getElementById('retryBootBtn');
+    if(retryBtn) retryBtn.addEventListener('click', ()=>location.reload());
   }
 }
 
