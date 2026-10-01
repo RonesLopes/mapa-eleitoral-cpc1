@@ -463,6 +463,24 @@ function titleCasePt(s){
 }
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtInt(n){return n==null?'—':n.toLocaleString('pt-BR');}
+function handleIconLoadError(img){
+  // a resource category with no matching icons/<cat>.png (e.g. sheet text that doesn't match
+  // any known keyword) would otherwise show a broken-image icon on the map — fall back to the
+  // plain colored dot used for "sem recurso definido" instead.
+  const ricon = img.closest('.ricon');
+  if(!ricon) return;
+  ricon.classList.add('plain');
+  const dot = document.createElement('span');
+  dot.className = 'dotfill';
+  dot.style.background = img.dataset.fallbackColor || 'var(--cia-x)';
+  img.replaceWith(dot);
+}
+function handleThumbLoadError(img){
+  const span = document.createElement('span');
+  span.className = 'swatch';
+  span.style.background = 'var(--cia-x)';
+  img.replaceWith(span);
+}
 function ciaOrdinal(cia){
   const m = (cia||'').match(/\d+/);
   return m ? parseInt(m[0]) : 'x';
@@ -513,7 +531,7 @@ function sheetResourceCat(text){
   if(t.includes('MOTOCICLET')) return 'moto';
   if(t.includes('VTR')) return 'vtr';
   if(t.includes('GMB')) return 'gmb';
-  if(t.includes('PPMM')) return 'ppmm';
+  if(t.includes('PPM') || t.includes('CADETE') || /\bSD\b/.test(t)) return 'ppmm';
   return 'outro';
 }
 function sheetParseNum(raw){
@@ -707,7 +725,7 @@ function renderApp(bpmList){
   const resourceRows = resourceCatsPresent.map(k=>{
     const count = escolas.filter(e=>e.turno1Cat===k || e.turno2Cat===k).length;
     return `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="${esc(k)}" checked>
-      <img class="lthumb" src="icons/${k}.png" alt="">
+      <img class="lthumb" src="icons/${k}.png" alt="" onerror="handleThumbLoadError(this)">
       <span class="name">${esc(DATA.resourceLabels[k])}</span><span class="count tabular">${count}</span></label>`;
   }).join('') + (hasNoResource ? `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="__none__" checked>
       <span class="swatch" style="background:var(--cia-x)"></span>
@@ -853,7 +871,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
 
   function iconHtml(cat, color){
     if(cat){
-      return `<div class="ricon"><img src="icons/${cat}.png" alt=""></div>`;
+      return `<div class="ricon"><img src="icons/${cat}.png" alt="" data-fallback-color="${color}" onerror="handleIconLoadError(this)"></div>`;
     }
     return `<div class="ricon plain"><span class="dotfill" style="background:${color}"></span></div>`;
   }
