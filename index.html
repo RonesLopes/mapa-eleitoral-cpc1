@@ -777,6 +777,7 @@ function renderApp(bpmList){
         </div>
         <div class="filter-group">
           <h3>Recurso (turno atual) <button id="resetRecurso" type="button">todos</button></h3>
+          <input type="text" class="search-input" id="searchRecurso" placeholder="Buscar recurso (ex: GPA, recobrimento)…">
           <div class="checklist" id="recursoChecklist">${resourceRows}</div>
         </div>
         <div class="filter-group">
@@ -1287,6 +1288,7 @@ ${bpmBreakdownHtml}
   }
   const bpmChecks = [...document.querySelectorAll('.bpm-check')];
   const searchInput = document.getElementById('searchLocal');
+  const searchRecursoInput = document.getElementById('searchRecurso');
 
   function currentFilters(){
     const ciaOn = {}; ciaChecks.forEach(c=>ciaOn[c.dataset.ciakey]=c.checked);
@@ -1294,16 +1296,20 @@ ${bpmBreakdownHtml}
     const recursoOn = {}; recursoChecks.forEach(c=>recursoOn[c.dataset.recurso]=c.checked);
     const bpmOn = {}; bpmChecks.forEach(c=>bpmOn[c.dataset.bpm]=c.checked);
     const q = norm(searchInput.value||'');
-    return {ciaOn, bairroOn, recursoOn, bpmOn, q};
+    const qRecurso = norm(searchRecursoInput.value||'');
+    return {ciaOn, bairroOn, recursoOn, bpmOn, q, qRecurso};
   }
 
   function update(){
-    const {ciaOn, bairroOn, recursoOn, bpmOn, q} = currentFilters();
+    const {ciaOn, bairroOn, recursoOn, bpmOn, q, qRecurso} = currentFilters();
     let visible = 0;
     markerEntries.forEach(({layer, e})=>{
       const cat = (turno==='1' ? e.turno1Cat : e.turno2Cat) || '__none__';
+      const rawTurno = turno==='1' ? e.turno1 : e.turno2;
+      const catLabel = DATA.resourceLabels[cat] || '';
       const on = (ciaOn[e.bpm+'|'+e.cia]!==false) && (bairroOn[e.bairroKey]!==false) && (recursoOn[cat]!==false) &&
-        (bpmOn[e.bpm]!==false) && (!q || norm(e.local).includes(q) || norm(e.endereco).includes(q));
+        (bpmOn[e.bpm]!==false) && (!q || norm(e.local).includes(q) || norm(e.endereco).includes(q)) &&
+        (!qRecurso || norm(catLabel).includes(qRecurso) || norm(rawTurno||'').includes(qRecurso));
       if(on){ if(!map.hasLayer(layer)) layer.addTo(map); visible++; }
       else if(map.hasLayer(layer)) map.removeLayer(layer);
     });
@@ -1340,9 +1346,10 @@ ${bpmBreakdownHtml}
   bairroChecks.forEach(c=>c.addEventListener('change', update));
   bpmChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); }));
   searchInput.addEventListener('input', update);
+  searchRecursoInput.addEventListener('input', update);
   document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>c.checked=true); update(); refreshVisibility();});
   document.getElementById('resetBairro').addEventListener('click', ()=>{bairroChecks.forEach(c=>c.checked=true); update();});
-  document.getElementById('resetRecurso').addEventListener('click', ()=>{recursoChecks.forEach(c=>c.checked=true); update();});
+  document.getElementById('resetRecurso').addEventListener('click', ()=>{recursoChecks.forEach(c=>c.checked=true); searchRecursoInput.value=''; update();});
   const resetBpmBtn = document.getElementById('resetBpm');
   if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update(); refreshVisibility();});
   refreshVisibility();
