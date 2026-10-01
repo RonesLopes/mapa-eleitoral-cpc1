@@ -382,10 +382,32 @@ a{color:inherit;}
 .report-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
 .report-gu{font-size:11.5px;color:var(--ink-2);margin-top:4px;font-style:italic;}
 .report-updated{flex:none;font-size:10.5px;color:var(--muted);white-space:nowrap;margin-top:2px;font-family:var(--font-mono);}
+.report-author{font-size:11px;color:var(--muted);margin-top:3px;}
 .report-empty{padding:30px 10px;text-align:center;color:var(--muted);font-size:13px;}
 @media (max-width:760px){
   .report-overlay{padding:0;align-items:flex-end;}
   .report-panel{width:100%;max-width:none;max-height:86vh;border-radius:16px 16px 0 0;}
+}
+
+/* ---------- identification modal ---------- */
+.id-overlay{
+  display:none;position:fixed;inset:0;background:rgba(10,10,5,.55);z-index:1000;
+  align-items:center;justify-content:center;padding:24px;
+}
+.id-overlay.open{display:flex;}
+.id-panel{background:var(--surface);border-radius:16px;box-shadow:var(--shadow);width:min(380px,100%);padding:22px 22px 20px;}
+.id-panel h2{font-size:16px;margin-bottom:6px;}
+.id-sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:6px;}
+.id-label{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 5px;}
+.id-input{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--line-strong);font-size:13.5px;
+  font-family:var(--font-body);background:var(--surface-2);color:var(--ink);}
+.id-input:focus{outline:2px solid var(--ink-2);outline-offset:1px;}
+.id-save{width:100%;margin-top:18px;padding:10px;border-radius:8px;border:none;background:var(--ink);color:var(--surface);
+  font-weight:700;font-size:13.5px;cursor:pointer;font-family:var(--font-body);}
+.id-save:hover{opacity:.9;}
+.id-chip{
+  font-size:11px;color:var(--muted);cursor:pointer;background:none;border:none;text-decoration:underline;
+  font-family:var(--font-body);padding:0;text-align:left;
 }
 
 /* ---------- chooser ---------- */
@@ -657,6 +679,25 @@ function renderChooser(){
     </div>`;
 }
 
+// Lightweight per-device identification (name + graduação/posto) — NOT a login:
+// no password, no account, nothing server-enforced. Stored in this browser's
+// localStorage so every Situação/Guarnição write can be auto-tagged with who
+// made it, for accountability when several people share the same battalion link.
+const IDENTITY_KEY = 'cpc1_identity';
+function getIdentity(){
+  try{
+    const raw = localStorage.getItem(IDENTITY_KEY);
+    if(!raw) return null;
+    const obj = JSON.parse(raw);
+    if(!obj || !obj.nome || !obj.nome.trim()) return null;
+    return obj;
+  }catch(err){ return null; }
+}
+function identityLabel(id){
+  if(!id) return '';
+  return ((id.patente||'').trim() ? id.patente.trim()+' ' : '') + id.nome.trim();
+}
+
 // Builds the "Recurso" sidebar checklist (checkboxes + counts) for a single turno,
 // so it can be regenerated whenever the turno toggle changes instead of staying
 // frozen on whatever was true for turno 1 at page load.
@@ -752,6 +793,8 @@ function renderApp(bpmList){
 
   const headerTitle = multi ? 'Gerência Geral' : `${bpmList[0]}º BPM`;
   const headerSub = multi ? 'Todos os batalhões — CPC I' : DATA.bpmLabels[bpmList[0]];
+  const identity = getIdentity();
+  const idChipText = identity ? `Você: ${esc(identityLabel(identity))} (trocar)` : 'Identificar-se';
   const footnoteText = multi
     ? `Fonte: O.S. 324 — Operação Eleições 2026. Link de gerência geral — vê e filtra todos os batalhões do CPC I.`
     : `Fonte: O.S. 324 — Operação Eleições 2026. Link de acesso exclusivo ao ${bpmList[0]}º BPM.`;
@@ -764,6 +807,7 @@ function renderApp(bpmList){
           <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
           <h1>${esc(headerTitle)}</h1>
           <p>${esc(headerSub)}</p>
+          <button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>
         </div>
         <div class="stats">
           <div class="stat"><span class="v tabular">${escolas.length}</span><span class="l">Locais</span></div>
@@ -831,6 +875,19 @@ function renderApp(bpmList){
         <button class="close" id="detailClose" aria-label="Fechar">×</button>
         <div id="detailBody"></div>
       </div>
+      <div class="id-overlay" id="idOverlay">
+        <div class="id-panel">
+          <h2>Identificação</h2>
+          <p class="id-sub">Antes de marcar Situação ou salvar Guarnição, informe seu nome e graduação — fica salvo só neste aparelho e passa a identificar suas atualizações para quem mais usa este link. Não é uma senha, ninguém mais vê isso digitado.</p>
+          <form id="idForm">
+            <label class="id-label" for="idPatente">Graduação / Posto</label>
+            <input type="text" class="id-input" id="idPatente" placeholder="Ex: 1º Ten., Sgt, Cb…" maxlength="40" required>
+            <label class="id-label" for="idNome">Nome</label>
+            <input type="text" class="id-input" id="idNome" placeholder="Seu nome" maxlength="60" required>
+            <button type="submit" class="id-save">Confirmar</button>
+          </form>
+        </div>
+      </div>
     </div>`;
 
   // ---- defer the heavy Leaflet work (markers/polygons) two frames so the browser ----
@@ -862,6 +919,40 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   const detail = document.getElementById('detail');
   const detailBody = document.getElementById('detailBody');
   const visibleCountEl = document.getElementById('visibleCount');
+
+  // ---- lightweight identification modal (name + graduação, not a login) ----
+  const idOverlay = document.getElementById('idOverlay');
+  const idForm = document.getElementById('idForm');
+  const idPatenteInput = document.getElementById('idPatente');
+  const idNomeInput = document.getElementById('idNome');
+  const idChipBtn = document.getElementById('idChipBtn');
+  function refreshIdChip(){
+    const id = getIdentity();
+    idChipBtn.textContent = id ? `👤 Você: ${identityLabel(id)} (trocar)` : '👤 Identificar-se';
+  }
+  function openIdModal(){
+    const id = getIdentity();
+    idPatenteInput.value = id ? (id.patente||'') : '';
+    idNomeInput.value = id ? (id.nome||'') : '';
+    idOverlay.classList.add('open');
+    idPatenteInput.focus();
+  }
+  function closeIdModal(){ idOverlay.classList.remove('open'); }
+  idChipBtn.addEventListener('click', openIdModal);
+  idForm.addEventListener('submit', (ev)=>{
+    ev.preventDefault();
+    const patente = idPatenteInput.value.trim().slice(0,40);
+    const nome = idNomeInput.value.trim().slice(0,60);
+    if(!nome) return;
+    localStorage.setItem(IDENTITY_KEY, JSON.stringify({patente, nome}));
+    refreshIdChip();
+    closeIdModal();
+  });
+  if(!getIdentity()) openIdModal();
+  function currentAutorLabel(){
+    const id = getIdentity();
+    return id ? identityLabel(id) : null;
+  }
 
   const map = L.map('map', {zoomControl:false, attributionControl:true});
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -970,12 +1061,14 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       const guarnicao = data['guarnicao'+suf] || '';
       const ts = data['updatedAt'+suf];
       const updated = ts ? timeAgo(ts.toDate()) : '';
+      const autor = data['autor'+suf] || '';
       return `<div class="report-row" data-idx="${idx}">
         <span class="report-status ${statusClass}">${esc(statusLabel)}</span>
         <div class="report-info">
           <div class="report-title">Nº ${esc(e.numero)} · ${esc(e.local)}</div>
           <div class="report-sub">${multi?esc(DATA.bpmLabels[e.bpm])+' · ':''}${esc(titleCasePt(e.bairro))} · ${esc(e.cia==='CIA não informada'?'Não informada':e.cia)}</div>
           ${guarnicao?`<div class="report-gu">GU: ${esc(guarnicao)}</div>`:''}
+          ${autor?`<div class="report-author">Registrado por: ${esc(autor)}</div>`:''}
         </div>
         <div class="report-updated">${esc(updated)}</div>
       </div>`;
@@ -1025,6 +1118,8 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       const guarnicao = data['guarnicao'+suf] || '';
       const ts = data['updatedAt'+suf];
       const updated = ts ? timeAgo(ts.toDate()) : '';
+      const autor = data['autor'+suf] || '';
+      const updatedCell = [esc(updated), autor?esc(autor):''].filter(Boolean).join('<br>');
       return `<tr>
         <td>${esc(e.numero)}</td>
         <td>${esc(e.local)}</td>
@@ -1032,7 +1127,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
         <td>${esc(e.cia==='CIA não informada'?'Não informada':e.cia)}</td>
         <td><span class="status-tag ${statusClass}">${esc(statusLabel)}</span></td>
         <td>${esc(guarnicao)||'—'}</td>
-        <td>${esc(updated)||'—'}</td>
+        <td>${updatedCell||'—'}</td>
       </tr>`;
     }).join('');
 
@@ -1115,12 +1210,12 @@ ${bpmBreakdownHtml}
   <thead>
     <tr class="colheads">
       <th style="width:5%;">Nº</th>
-      <th style="width:26%;">Local</th>
-      <th style="width:16%;">Bairro</th>
-      <th style="width:10%;">CIA</th>
-      <th style="width:10%;">Situação</th>
-      <th style="width:23%;">Guarnição</th>
-      <th style="width:10%;">Atualizado</th>
+      <th style="width:24%;">Local</th>
+      <th style="width:15%;">Bairro</th>
+      <th style="width:9%;">CIA</th>
+      <th style="width:9%;">Situação</th>
+      <th style="width:21%;">Guarnição</th>
+      <th style="width:17%;">Atualizado / Responsável</th>
     </tr>
   </thead>
   <tbody>${rowsHtml}</tbody>
@@ -1231,7 +1326,8 @@ ${bpmBreakdownHtml}
       const val = lastData['situacao'+suf] || null;
       btns.forEach(b=>b.classList.toggle('active', b.dataset.val===val));
       const ts = lastData['updatedAt'+suf];
-      metaEl.textContent = ts ? 'Atualizado ' + timeAgo(ts.toDate()) : 'Ainda não marcado';
+      const autor = lastData['autor'+suf];
+      metaEl.textContent = ts ? 'Atualizado ' + timeAgo(ts.toDate()) + (autor ? ' — ' + autor : '') : 'Ainda não marcado';
       guarnicaoMeta.textContent = '';
       if(document.activeElement !== guarnicaoInput){
         guarnicaoInput.value = lastData['guarnicao'+suf] || '';
@@ -1244,13 +1340,13 @@ ${bpmBreakdownHtml}
       const curVal = lastData['situacao'+suf] || null;
       const next = curVal===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
       metaEl.textContent = 'Salvando…';
-      docRef.set({ ['situacao'+suf]: next, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp() }, {merge:true})
+      docRef.set({ ['situacao'+suf]: next, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
         .catch(err=>{ metaEl.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
     }));
     guarnicaoSaveBtn.addEventListener('click', ()=>{
       const suf = turno;
       guarnicaoMeta.textContent = 'Salvando…';
-      docRef.set({ ['guarnicao'+suf]: guarnicaoInput.value.slice(0,500), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp() }, {merge:true})
+      docRef.set({ ['guarnicao'+suf]: guarnicaoInput.value.slice(0,500), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
         .then(()=>{ guarnicaoMeta.textContent = 'Guarnição salva.'; })
         .catch(err=>{ guarnicaoMeta.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
     });
