@@ -619,6 +619,7 @@ function startApp(){
 boot();
 
 function renderChooser(){
+  const validBpms = Object.keys(DATA.bpmLabels);
   const cards = validBpms.map(bpm=>{
     const escolas = DATA.escolas.filter(e=>e.bpm===bpm);
     const bairros = new Set(DATA.bairros.filter(b=>b.bpm===bpm).map(b=>b.key));
