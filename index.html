@@ -657,6 +657,24 @@ function renderChooser(){
     </div>`;
 }
 
+// Builds the "Recurso" sidebar checklist (checkboxes + counts) for a single turno,
+// so it can be regenerated whenever the turno toggle changes instead of staying
+// frozen on whatever was true for turno 1 at page load.
+function resourceChecklistRows(escolas, turno){
+  const getCat = e => turno==='1' ? e.turno1Cat : e.turno2Cat;
+  const catsPresent = Object.keys(DATA.resourceLabels).filter(k=>
+    escolas.some(e=>getCat(e)===k));
+  const hasNoResource = escolas.some(e=>!getCat(e));
+  return catsPresent.map(k=>{
+    const count = escolas.filter(e=>getCat(e)===k).length;
+    return `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="${esc(k)}" checked>
+      <img class="lthumb" src="icons/${k}.png" alt="" onerror="handleThumbLoadError(this)">
+      <span class="name">${esc(DATA.resourceLabels[k])}</span><span class="count tabular">${count}</span></label>`;
+  }).join('') + (hasNoResource ? `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="__none__" checked>
+      <span class="swatch" style="background:var(--cia-x)"></span>
+      <span class="name">Sem recurso definido</span><span class="count tabular">${escolas.filter(e=>!getCat(e)).length}</span></label>` : '');
+}
+
 function renderApp(bpmList){
   try{
   const multi = bpmList.length > 1;
@@ -719,17 +737,8 @@ function renderApp(bpmList){
       <span class="name">${esc(label)}</span><span class="count tabular">${count}</span></label>`;
   }).join('');
 
-  const resourceCatsPresent = Object.keys(DATA.resourceLabels).filter(k=>
-    escolas.some(e=>e.turno1Cat===k || e.turno2Cat===k));
-  const hasNoResource = escolas.some(e=>!e.turno1Cat || !e.turno2Cat);
-  const resourceRows = resourceCatsPresent.map(k=>{
-    const count = escolas.filter(e=>e.turno1Cat===k || e.turno2Cat===k).length;
-    return `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="${esc(k)}" checked>
-      <img class="lthumb" src="icons/${k}.png" alt="" onerror="handleThumbLoadError(this)">
-      <span class="name">${esc(DATA.resourceLabels[k])}</span><span class="count tabular">${count}</span></label>`;
-  }).join('') + (hasNoResource ? `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="__none__" checked>
-      <span class="swatch" style="background:var(--cia-x)"></span>
-      <span class="name">Sem recurso definido</span><span class="count tabular">${escolas.filter(e=>!e.turno1Cat||!e.turno2Cat).length}</span></label>` : '');
+  // initial paint always starts on turno 1 (see `let turno = '1'` in wireApp)
+  const resourceRows = resourceChecklistRows(escolas, '1');
 
   const missingBox = missing.length ? `<div class="filter-group"><div class="missing-box">
     <div class="mh">⚠ ${missing.length} local(is) sem coordenada</div>
@@ -768,7 +777,7 @@ function renderApp(bpmList){
         </div>
         <div class="filter-group">
           <h3>Recurso (turno atual) <button id="resetRecurso" type="button">todos</button></h3>
-          <div class="checklist">${resourceRows}</div>
+          <div class="checklist" id="recursoChecklist">${resourceRows}</div>
         </div>
         <div class="filter-group">
           <h3>Bairro <button id="resetBairro" type="button">todos</button></h3>
@@ -1149,6 +1158,7 @@ ${bpmBreakdownHtml}
     refreshAllSituacaoRings();
     if(refreshDetailTurnoUI) refreshDetailTurnoUI();
     if(reportOpen) renderReport();
+    rebuildResourceChecklist(t);
     update();
   }
   document.getElementById('turno1Btn').addEventListener('click', ()=>setTurno('1'));
@@ -1260,7 +1270,21 @@ ${bpmBreakdownHtml}
   // ---- filters ----
   const ciaChecks = [...document.querySelectorAll('.cia-check')];
   const bairroChecks = [...document.querySelectorAll('.bairro-check')];
-  const recursoChecks = [...document.querySelectorAll('.recurso-check')];
+  let recursoChecks = [];
+  function bindRecursoChecks(){
+    recursoChecks = [...document.querySelectorAll('.recurso-check')];
+    recursoChecks.forEach(c=>c.addEventListener('change', update));
+  }
+  bindRecursoChecks();
+  // Rebuilds the "Recurso" checklist (checkboxes + counts) for the given turno —
+  // called on load and every time setTurno() runs, so the categories/counts shown
+  // always reflect whichever turno (1º/2º) is currently selected, not just turno 1.
+  function rebuildResourceChecklist(t){
+    const container = document.getElementById('recursoChecklist');
+    if(!container) return;
+    container.innerHTML = resourceChecklistRows(escolas, t);
+    bindRecursoChecks();
+  }
   const bpmChecks = [...document.querySelectorAll('.bpm-check')];
   const searchInput = document.getElementById('searchLocal');
 
@@ -1314,7 +1338,6 @@ ${bpmBreakdownHtml}
 
   ciaChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); }));
   bairroChecks.forEach(c=>c.addEventListener('change', update));
-  recursoChecks.forEach(c=>c.addEventListener('change', update));
   bpmChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); }));
   searchInput.addEventListener('input', update);
   document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>c.checked=true); update(); refreshVisibility();});
