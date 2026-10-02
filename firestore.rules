@@ -41,14 +41,18 @@ service cloud.firestore {
         && (!('autor1' in d) || (d.autor1 is string && d.autor1.size() <= 100))
         && (!('autor2' in d) || (d.autor2 is string && d.autor2.size() <= 100));
     }
+    // The administrator (admin@cpc1.app) may write any bairro and is the only one who can delete.
+    function isAdmin(){
+      return request.auth != null && request.auth.token.email == 'admin@cpc1.app';
+    }
     function inMyArea(docId){
       return request.auth != null && request.auth.token.email != null
         && docId.split('__')[0] in areaOf(request.auth.token.email);
     }
     match /status/{docId} {
       allow read: if true;
-      allow create, update: if validShape() && (request.auth == null || inMyArea(docId));
-      allow delete: if false;
+      allow create, update: if validShape() && (request.auth == null || isAdmin() || inMyArea(docId));
+      allow delete: if isAdmin();
     }
     match /{document=**} {
       allow read, write: if false;

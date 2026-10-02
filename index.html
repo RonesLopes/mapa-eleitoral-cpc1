@@ -426,6 +426,26 @@ a{color:inherit;}
   font-family:var(--font-body);padding:0;text-align:left;
 }
 
+/* ---------- administrator ---------- */
+.admin-btn{margin-top:10px;padding:8px 12px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);
+  color:var(--ink);font-weight:700;font-size:12.5px;cursor:pointer;font-family:var(--font-body);text-align:left;}
+.admin-btn:hover{background:var(--surface-2);}
+.id-panel.wide{width:min(460px,100%);max-height:90vh;max-height:90dvh;overflow-y:auto;}
+select.id-input{appearance:auto;}
+.adm-count{margin-top:14px;font-size:12.5px;line-height:1.5;color:var(--ink-2);}
+.adm-msg{min-height:18px;margin-top:10px;font-size:12.5px;color:var(--ink-2);line-height:1.4;}
+.adm-actions{display:flex;gap:10px;margin-top:14px;}
+.adm-actions button{flex:1;}
+.adm-secondary{padding:10px 12px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+  font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body);}
+.adm-csv{width:100%;margin-top:14px;}
+.adm-danger{padding:10px 12px;border-radius:8px;border:none;background:var(--critical);color:#fff;font-weight:700;font-size:13.5px;
+  cursor:pointer;font-family:var(--font-body);}
+.adm-danger:disabled{opacity:.4;cursor:not-allowed;}
+.admin-clear-one{margin-top:14px;width:100%;padding:9px;border-radius:8px;border:1px solid var(--critical);background:none;
+  color:var(--critical);font-weight:700;font-size:12.5px;cursor:pointer;font-family:var(--font-body);}
+.admin-clear-one.armed{background:var(--critical);color:#fff;}
+
 /* ---------- personal login ---------- */
 .login-form{max-width:360px;margin-top:6px;}
 .login-form .id-save{margin-top:20px;}
@@ -517,8 +537,11 @@ try{
 // (a label, not a real mailbox). This table drives the UI only — the real
 // enforcement of who can write which bairro lives in firestore.rules (areaOf).
 const AUTH_DOMAIN = 'cpc1.app';
-const USERS = {"pedrosa":{"patente":"1º Ten QOPM","nome":"Pedrosa","bpm":"1","bairros":["1|SACRAMENTA","1|TELEGRAFO SEM FIO"]},"thais":{"patente":"1º Ten QOPM","nome":"Thais","bpm":"1","bairros":["1|MARCO"]},"sales":{"patente":"1º Ten QOPM","nome":"Sales","bpm":"1","bairros":["1|PEDREIRA"]},"amanajas":{"patente":"1º Ten QOPM","nome":"Amanajás","bpm":"2","bairros":["2|CAMPINA","2|CIDADE VELHA","2|UMARIZAL","2|REDUTO"]},"karyn":{"patente":"1º Ten QOPM","nome":"Karyn","bpm":"2","bairros":["2|SAO BRAS","2|FATIMA","2|NAZARE","2|BATISTA CAMPOS"]},"tatiane":{"patente":"1º Ten QOPM","nome":"Tatiane","bpm":"20","bairros":["20|CONDOR","20|CREMACAO","20|JURUNAS"]},"anjos":{"patente":"1º Ten QOPM","nome":"Anjos","bpm":"27","bairros":["27|MARAMBAIA","27|CASTANHEIRA"]},"sidney":{"patente":"1º Ten QOPM","nome":"Sidney","bpm":"27","bairros":["27|CURIO UTINGA","27|SOUZA"]},"noronha":{"patente":"1º Ten QOPM","nome":"Noronha","bpm":"37","bairros":["37|GUAMA","37|UNIVERSITARIO"]},"vanderlei":{"patente":"1º Ten QOPM","nome":"Vanderlei","bpm":"37","bairros":["37|TERRA FIRME","37|CANUDOS"]}};
+const USERS = {"admin":{"patente":"","nome":"Administrador","admin":true},"pedrosa":{"patente":"1º Ten QOPM","nome":"Pedrosa","bpm":"1","bairros":["1|SACRAMENTA","1|TELEGRAFO SEM FIO"]},"thais":{"patente":"1º Ten QOPM","nome":"Thais","bpm":"1","bairros":["1|MARCO"]},"sales":{"patente":"1º Ten QOPM","nome":"Sales","bpm":"1","bairros":["1|PEDREIRA"]},"amanajas":{"patente":"1º Ten QOPM","nome":"Amanajás","bpm":"2","bairros":["2|CAMPINA","2|CIDADE VELHA","2|UMARIZAL","2|REDUTO"]},"karyn":{"patente":"1º Ten QOPM","nome":"Karyn","bpm":"2","bairros":["2|SAO BRAS","2|FATIMA","2|NAZARE","2|BATISTA CAMPOS"]},"tatiane":{"patente":"1º Ten QOPM","nome":"Tatiane","bpm":"20","bairros":["20|CONDOR","20|CREMACAO","20|JURUNAS"]},"anjos":{"patente":"1º Ten QOPM","nome":"Anjos","bpm":"27","bairros":["27|MARAMBAIA","27|CASTANHEIRA"]},"sidney":{"patente":"1º Ten QOPM","nome":"Sidney","bpm":"27","bairros":["27|CURIO UTINGA","27|SOUZA"]},"noronha":{"patente":"1º Ten QOPM","nome":"Noronha","bpm":"37","bairros":["37|GUAMA","37|UNIVERSITARIO"]},"vanderlei":{"patente":"1º Ten QOPM","nome":"Vanderlei","bpm":"37","bairros":["37|TERRA FIRME","37|CANUDOS"]}};
 var AUTH_USER = null;
+function isAdminUser(){ return !!(AUTH_USER && AUTH_USER.admin); }
+// true when this location's bairro may be edited by whoever is signed in (everyone, when nobody is)
+function ownsBairro(k){ return !AUTH_USER || isAdminUser() || AUTH_USER.bairros.has(k); }
 
 function situacaoDocId(e){ return (e.bairroKey + '__' + e.numero).replace(/\//g,'-'); }
 function timeAgo(date){
@@ -737,8 +760,13 @@ function profileForUser(u){
   return p ? Object.assign({username:name}, p) : null;
 }
 function enterAsUser(p){
-  if(!DATA.bpmLabels[p.bpm]){
+  if(!p.admin && !DATA.bpmLabels[p.bpm]){
     document.getElementById('root').innerHTML = `<div class="chooser"><h1>Batalhão indisponível</h1><p>O ${esc(p.bpm)}º BPM não está na planilha neste momento. Tente novamente mais tarde.</p></div>`;
+    return;
+  }
+  if(p.admin){
+    AUTH_USER = { username: p.username, label: 'Administrador', admin: true, bpm: null, bairros: null };
+    renderApp(Object.keys(DATA.bpmLabels).sort((a,b)=>parseInt(a)-parseInt(b)));
     return;
   }
   AUTH_USER = {
@@ -869,6 +897,7 @@ function resourceChecklistRows(escolas, turno){
 // Human-readable list of the bairros the signed-in officer may edit (names from the sheet).
 function authAreaNames(escolas){
   if(!AUTH_USER) return '';
+  if(isAdminUser()) return 'todos os bairros';
   return [...AUTH_USER.bairros].map(k=>{
     const e = escolas.find(x=>x.bairroKey===k);
     return e ? titleCasePt(e.bairro) : null;
@@ -955,7 +984,30 @@ function renderApp(bpmList){
   const headerSub = multi ? 'Todos os batalhões — CPC I' : DATA.bpmLabels[bpmList[0]];
   const identity = getIdentity();
   const idChipText = identity ? `Você: ${esc(identityLabel(identity))} (trocar)` : 'Identificar-se';
-  const footnoteText = AUTH_USER
+  // Administrator tools dialog (markup only exists for the admin login).
+  const adminModalHtml = `
+      <div class="id-overlay" id="adminOverlay" role="dialog" aria-modal="true" aria-labelledby="admTitle">
+        <div class="id-panel wide">
+          <h2 id="admTitle">Administração</h2>
+          <p class="id-sub">Apaga as marcações de Situação e Guarnição para recomeçar do zero. A planilha de locais não é afetada.</p>
+          <label class="id-label" for="admBpm">Batalhão</label>
+          <select class="id-input" id="admBpm"><option value="all">Todos os batalhões</option>${bpmList.map(b=>`<option value="${b}">${b}º BPM</option>`).join('')}</select>
+          <label class="id-label" for="admTurno">O que apagar</label>
+          <select class="id-input" id="admTurno"><option value="both">1º e 2º turno (tudo)</option><option value="1">Somente o 1º turno</option><option value="2">Somente o 2º turno</option></select>
+          <div class="adm-count" id="admCount"></div>
+          <button type="button" class="adm-secondary adm-csv" id="admCsv">⬇ Baixar uma cópia (CSV) antes de apagar</button>
+          <label class="id-label" for="admConfirm">Para confirmar, digite LIMPAR</label>
+          <input type="text" class="id-input" id="admConfirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="LIMPAR">
+          <div class="adm-msg" id="admMsg" role="status"></div>
+          <div class="adm-actions">
+            <button type="button" class="adm-secondary" id="admClose">Fechar</button>
+            <button type="button" class="adm-danger" id="admRun" disabled>Apagar</button>
+          </div>
+        </div>
+      </div>`;
+  const footnoteText = isAdminUser()
+    ? `Fonte: O.S. 324 — Operação Eleições 2026. Acesso de administrador geral — vê todos os batalhões e pode editar e apagar em qualquer local.`
+    : AUTH_USER
     ? `Fonte: O.S. 324 — Operação Eleições 2026. Acesso pessoal — vê o ${bpmList[0]}º BPM inteiro e edita apenas os seus bairros.`
     : multi
     ? `Fonte: O.S. 324 — Operação Eleições 2026. Link de gerência geral — vê e filtra todos os batalhões do CPC I.`
@@ -969,7 +1021,7 @@ function renderApp(bpmList){
           <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
           <h1>${esc(headerTitle)}</h1>
           <p>${esc(headerSub)}</p>
-          ${AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div><div class="area-note">Os demais bairros aparecem esmaecidos, só para consulta.</div>` : (multi ? '' : `<button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>`)}
+          ${isAdminUser() ? `<div class="area-note">👤 <b>Administrador</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Acesso total: vê tudo e pode editar e apagar em qualquer local.</div><button type="button" class="admin-btn" id="adminBtn">🛠️ Administração</button>` : AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div><div class="area-note">Os demais bairros aparecem esmaecidos, só para consulta.</div>` : (multi ? '' : `<button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>`)}
         </div>
         <div class="stats">
           <div class="stat"><span class="v tabular">${escolas.length}</span><span class="l">Locais</span></div>
@@ -998,7 +1050,7 @@ function renderApp(bpmList){
         <div id="map"></div>
         <div class="filtoggle" id="filtoggle">☰ Filtros</div>
         <button type="button" class="reportbtn" id="reportBtn">📋 Relatório</button>
-        <div class="topbadge"><span class="dot"></span><span id="visibleCount">${AUTH_USER ? located.filter(e=>AUTH_USER.bairros.has(e.bairroKey)).length : located.length}</span>&nbsp;de&nbsp;${AUTH_USER ? located.filter(e=>AUTH_USER.bairros.has(e.bairroKey)).length : located.length} locais visíveis</div>
+        <div class="topbadge"><span class="dot"></span><span id="visibleCount">${located.filter(e=>ownsBairro(e.bairroKey)).length}</span>&nbsp;de&nbsp;${located.filter(e=>ownsBairro(e.bairroKey)).length} locais visíveis</div>
         <div class="turno-toggle">
           <button type="button" class="active" id="turno1Btn">1º turno</button>
           <button type="button" id="turno2Btn">2º turno</button>
@@ -1037,6 +1089,7 @@ function renderApp(bpmList){
         <button class="close" id="detailClose" aria-label="Fechar">×</button>
         <div id="detailBody"></div>
       </div>
+      ${isAdminUser() ? adminModalHtml : ''}
       <div class="id-overlay" id="idOverlay">
         <div class="id-panel">
           <h2>Identificação</h2>
@@ -1148,7 +1201,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   }
   // Signed-in officers (AUTH_USER) only own some bairros: everything else stays on the
   // map for context but dimmed, and never reacts to the filters.
-  const inArea = e => !AUTH_USER || AUTH_USER.bairros.has(e.bairroKey);
+  const inArea = e => ownsBairro(e.bairroKey);
   function makeIcon(e, color){
     const cat = turno==='1' ? e.turno1Cat : e.turno2Cat;
     return L.divIcon({ className: inArea(e) ? '' : 'marker-faded', html:iconHtml(cat, color), iconSize:[36,36], iconAnchor:[18,18] });
@@ -1519,8 +1572,8 @@ ${bpmBreakdownHtml}
     // only ones who can actually mark things there. This is a UI-level restriction
     // only (no backend auth exists in this project by design) — same spirit as the
     // 5 locked battalion links not being able to see each other.
-    const outOfArea = !!AUTH_USER && !AUTH_USER.bairros.has(e.bairroKey);
-    const readOnly = multi || outOfArea;
+    const outOfArea = !ownsBairro(e.bairroKey);
+    const readOnly = (multi && !isAdminUser()) || outOfArea;
     detailBody.innerHTML = `
       <div class="eyebrow2">Nº ${esc(e.numero)} · ${esc(titleCasePt(e.bairro))}</div>
       <h2>${esc(e.local)}</h2>
@@ -1545,6 +1598,7 @@ ${bpmBreakdownHtml}
         <div class="situacao-label" id="guarnicaoSectionLabel" style="margin-top:14px;">Guarnição (GU)</div>
         <textarea id="guarnicaoInput" class="guarnicao-input" rows="2" placeholder="Nomes dos policiais na guarnição…" ${readOnly?'readonly':''}></textarea>
         ${readOnly ? '' : `<button type="button" class="situacao-save" id="guarnicaoSave">Salvar guarnição</button>`}
+        ${isAdminUser() ? `<button type="button" class="admin-clear-one" id="adminClearOne">Apagar marcações deste local</button>` : ''}
         <div class="situacao-meta" id="guarnicaoMeta"></div>
       </div>`;
     detail.classList.add('open');
@@ -1599,6 +1653,22 @@ ${bpmBreakdownHtml}
         docRef.set({ ['guarnicao'+suf]: guarnicaoInput.value.slice(0,500), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
           .then(()=>{ guarnicaoMeta.textContent = 'Guarnição salva.'; })
           .catch(err=>{ guarnicaoMeta.textContent = (err && err.code==='permission-denied') ? 'Sem permissão para este bairro.' : 'Não foi possível salvar. Tente de novo.'; console.error(err); });
+      });
+    }
+    // administrator: wipe this one location (both turnos) — two taps, the second confirms
+    const clearOneBtn = document.getElementById('adminClearOne');
+    if(clearOneBtn){
+      let armed = false, timer = null;
+      const label = clearOneBtn.textContent;
+      clearOneBtn.addEventListener('click', ()=>{
+        if(!armed){
+          armed = true; clearOneBtn.classList.add('armed'); clearOneBtn.textContent = 'Toque de novo para confirmar: apagar tudo deste local';
+          timer = setTimeout(()=>{ armed = false; clearOneBtn.classList.remove('armed'); clearOneBtn.textContent = label; }, 5000);
+          return;
+        }
+        clearTimeout(timer); armed = false; clearOneBtn.classList.remove('armed'); clearOneBtn.textContent = 'Apagando…';
+        docRef.delete().then(()=>{ clearOneBtn.textContent = 'Apagado.'; setTimeout(()=>{ clearOneBtn.textContent = label; }, 1500); })
+          .catch(err=>{ console.error(err); clearOneBtn.textContent = 'Não foi possível apagar.'; });
       });
     }
     situacaoUnsub = docRef.onSnapshot(snap=>{
@@ -1668,7 +1738,7 @@ ${bpmBreakdownHtml}
       else if(map.hasLayer(layer)) map.removeLayer(layer);
     });
     bairroEntries.forEach(({layer, key, bpm, cia})=>{
-      if(AUTH_USER && !AUTH_USER.bairros.has(key)){ layer.setStyle({opacity:0.10, fillOpacity:0.02}); return; }
+      if(!ownsBairro(key)){ layer.setStyle({opacity:0.10, fillOpacity:0.02}); return; }
       const bVisible = bairroOn[key] !== false;
       const cVisible = !cia || ciaOn[bpm+'|'+cia] !== false;
       const pVisible = bpmOn[bpm] !== false;
@@ -1723,7 +1793,7 @@ ${bpmBreakdownHtml}
   if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update(); refreshVisibility(); if(reportOpen) renderReport();});
   // Personal login: only the officer's own Companhias/Bairros stay checked; the rest
   // are unchecked and locked (greyed out) so the filters can't leave their area.
-  if(AUTH_USER){
+  if(AUTH_USER && !isAdminUser()){
     const ownCia = new Set(escolas.filter(e=>AUTH_USER.bairros.has(e.bairroKey)).map(e=>e.bpm+'|'+e.cia));
     const lock = c => { c.checked = false; c.disabled = true; c.closest('.check-row').classList.add('locked'); };
     ciaChecks.forEach(c=>{ if(!ownCia.has(c.dataset.ciakey)) lock(c); });
@@ -1744,6 +1814,91 @@ ${bpmBreakdownHtml}
   const legendToggle = document.getElementById('legendToggle');
   if(window.innerWidth <= 760) legend.classList.add('collapsed');
   legendToggle.addEventListener('click', ()=> legend.classList.toggle('collapsed'));
+
+  // ---- administrator tools: only exists on the admin login (admin@cpc1.app). The server
+  // rules (isAdmin) are what actually allow these deletes; this is just the interface. ----
+  const adminBtn = document.getElementById('adminBtn');
+  if(adminBtn){
+    const FIELDS = ['situacao','guarnicao','updatedAt','autor'];
+    const adminOverlay = document.getElementById('adminOverlay');
+    const admBpm = document.getElementById('admBpm'), admTurno = document.getElementById('admTurno');
+    const admCount = document.getElementById('admCount'), admConfirm = document.getElementById('admConfirm');
+    const admMsg = document.getElementById('admMsg'), admRun = document.getElementById('admRun');
+    const hasTurno = (d, t)=> FIELDS.some(f=> d[f+t] !== undefined);
+    function admScopeIds(){
+      const bpm = admBpm.value, t = admTurno.value;
+      return Object.keys(situacaoDocs).filter(id=>{
+        if(bpm!=='all' && id.split('|')[0]!==bpm) return false;
+        return t==='both' ? true : hasTurno(situacaoDocs[id], t);
+      });
+    }
+    function admRefresh(){
+      const ids = admScopeIds(), t = admTurno.value;
+      let marks = 0, gu = 0;
+      ids.forEach(id=>{
+        const d = situacaoDocs[id];
+        ['1','2'].forEach(x=>{ if(t!=='both' && t!==x) return; if(d['situacao'+x]) marks++; if(d['guarnicao'+x]) gu++; });
+      });
+      admCount.innerHTML = ids.length
+        ? `<b>${ids.length}</b> registro(s) serão apagados — ${marks} marcação(ões) de Situação e ${gu} guarnição(ões) preenchida(s).`
+        : 'Não há nada para apagar neste filtro.';
+      admRun.disabled = !(ids.length && admConfirm.value.trim().toUpperCase()==='LIMPAR');
+    }
+    adminBtn.addEventListener('click', ()=>{ admConfirm.value = ''; admMsg.textContent = ''; admRefresh(); adminOverlay.classList.add('open'); });
+    document.getElementById('admClose').addEventListener('click', ()=> adminOverlay.classList.remove('open'));
+    [admBpm, admTurno].forEach(el=> el.addEventListener('change', admRefresh));
+    admConfirm.addEventListener('input', admRefresh);
+
+    // optional backup: only downloads when the button is clicked
+    document.getElementById('admCsv').addEventListener('click', ()=>{
+      const rows = [['Batalhão','Bairro','Nº','Turno','Situação','Guarnição','Registrado por','Atualizado em']];
+      Object.keys(situacaoDocs).sort().forEach(id=>{
+        const bpm = id.split('|')[0];
+        if(admBpm.value!=='all' && bpm!==admBpm.value) return;
+        const d = situacaoDocs[id];
+        const rest = id.slice(id.indexOf('|')+1), k = rest.lastIndexOf('__');
+        const bairroKey = bpm+'|'+rest.slice(0,k), num = rest.slice(k+2);
+        const esc1 = DATA.escolas.find(x=>x.bairroKey===bairroKey);
+        ['1','2'].forEach(t=>{
+          if(!hasTurno(d, t)) return;
+          const ts = d['updatedAt'+t];
+          rows.push([bpm+'º BPM', esc1 ? titleCasePt(esc1.bairro) : bairroKey, num, t+'º', d['situacao'+t]||'', d['guarnicao'+t]||'', d['autor'+t]||'', ts && ts.toDate ? ts.toDate().toLocaleString('pt-BR') : '']);
+        });
+      });
+      const csv = '﻿' + rows.map(r=> r.map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+      a.download = 'marcacoes_' + new Date().toISOString().slice(0,16).replace(/[-:T]/g,'') + '.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
+    });
+
+    admRun.addEventListener('click', async ()=>{
+      const ids = admScopeIds(), t = admTurno.value;
+      if(!ids.length) return;
+      admRun.disabled = true; admMsg.textContent = 'Apagando…';
+      try{
+        for(let i=0; i<ids.length; i+=400){
+          const batch = db.batch();
+          ids.slice(i, i+400).forEach(id=>{
+            const ref = db.collection('status').doc(id);
+            if(t==='both'){ batch.delete(ref); return; }
+            const other = t==='1' ? '2' : '1';
+            if(!hasTurno(situacaoDocs[id], other)){ batch.delete(ref); return; }   // nothing left on the other turno
+            const upd = {}; FIELDS.forEach(f=>{ upd[f+t] = firebase.firestore.FieldValue.delete(); });
+            batch.update(ref, upd);
+          });
+          await batch.commit();
+        }
+        admMsg.textContent = `Pronto: ${ids.length} registro(s) apagado(s).`;
+        admConfirm.value = '';
+      }catch(err){
+        console.error(err);
+        admMsg.textContent = 'Não foi possível apagar tudo: ' + ((err && err.code==='permission-denied') ? 'sem permissão.' : 'tente de novo.');
+      }
+      setTimeout(admRefresh, 600);
+    });
+  }
 
   window.addEventListener('resize', ()=>map.invalidateSize());
   setTimeout(()=>map.invalidateSize(), 200);
