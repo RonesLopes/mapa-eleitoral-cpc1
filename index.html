@@ -449,6 +449,12 @@ a{color:inherit;}
   padding:10px 16px;box-shadow:var(--shadow);font-size:12.5px;text-align:center;
 }
 
+.demo-banner{
+  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(92vw,480px);
+  background:#b3261e;color:#fff;border-radius:999px;padding:6px 14px;box-shadow:var(--shadow);white-space:nowrap;
+  font-size:12px;font-weight:700;letter-spacing:.02em;text-align:center;pointer-events:none;
+}
+
 @media (prefers-reduced-motion: reduce){
   *{transition-duration:.001ms !important;animation-duration:.001ms !important;}
 }
@@ -475,7 +481,22 @@ try{
   console.error('Firebase indisponível:', err);
 }
 
-function situacaoDocId(e){ return (e.bairroKey + '__' + e.numero).replace(/\//g,'-'); }
+// Temporary presentation links (?t=<token>): each opens one battalion's map, but
+// every Situação/Guarnição read/write goes to "demo__"-prefixed docs in the same
+// collection, which the real links never look up — so practice marks can't leak
+// into the official status. Links stop working at DEMO_EXPIRES_AT. Client-side
+// only, like the rest of this project's access control.
+const DEMO_LINKS = {
+  '78hzqfh8': '1',
+  '454dkj3c': '2',
+  '3t5893kz': '20',
+  'mpa2zurc': '27',
+  'xfr82dwb': '37',
+};
+const DEMO_EXPIRES_AT = Date.parse('2026-10-02T17:00:00-03:00');
+var DEMO_MODE = false;
+
+function situacaoDocId(e){ return (DEMO_MODE ? 'demo__' : '') + (e.bairroKey + '__' + e.numero).replace(/\//g,'-'); }
 function timeAgo(date){
   const s = Math.floor((Date.now()-date.getTime())/1000);
   if(s<60) return 'agora mesmo';
@@ -653,8 +674,22 @@ function startApp(){
   const bpmParam = (params.get('bpm')||'').trim();
   const isAdmin = params.get('admin')==='1';
   const validBpms = Object.keys(DATA.bpmLabels);
+  const demoToken = (params.get('t')||'').trim();
 
-  if(isAdmin){
+  if(demoToken){
+    const demoBpm = DEMO_LINKS[demoToken];
+    if(!demoBpm || !validBpms.includes(demoBpm) || Date.now() >= DEMO_EXPIRES_AT){
+      renderDemoExpired();
+      return;
+    }
+    DEMO_MODE = true;
+    renderApp([demoBpm]);
+    showDemoBanner();
+    // kick everyone out once the window closes, even with the page left open
+    const timer = setInterval(()=>{
+      if(Date.now() >= DEMO_EXPIRES_AT){ clearInterval(timer); renderDemoExpired(); }
+    }, 30000);
+  }else if(isAdmin){
     renderApp(validBpms.slice());
   }else if(validBpms.includes(bpmParam)){
     renderApp([bpmParam]);
@@ -665,35 +700,48 @@ function startApp(){
 
 boot();
 
+// The bare URL used to list every battalion's official link as cards — anyone
+// handed a ?t= demo link could just strip the query and find them all. Now it
+// only points people back to the link their unit gave them.
 function renderChooser(){
-  const validBpms = Object.keys(DATA.bpmLabels);
-  const cards = validBpms.map(bpm=>{
-    const escolas = DATA.escolas.filter(e=>e.bpm===bpm);
-    const bairros = new Set(DATA.bairros.filter(b=>b.bpm===bpm).map(b=>b.key));
-    return `<a class="bpm-card" href="?bpm=${bpm}">
-      <div class="num">${bpm}º</div>
-      <div class="name">${esc(DATA.bpmLabels[bpm])}</div>
-      <div class="meta"><span>${escolas.length} locais</span><span>${bairros.size} bairros</span></div>
-    </a>`;
-  }).join('');
   document.getElementById('root').innerHTML = `
     <div class="chooser">
       <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
-      <h1>Selecione um Batalhão</h1>
-      <p>Cada card abaixo abre o mapa de locais de votação travado na área do respectivo batalhão — é o link que deve ser repassado ao responsável daquela área. Dentro do mapa é possível filtrar por Companhia e por Bairro.</p>
-      <div class="bpm-grid">${cards}</div>
-      <div class="src">Fonte: O.S. 324 — Operação Eleições 2026. Coordenadas dos bairros: KML "CPC I". Locais de votação e lat/long: planilha de locais por batalhão, CIA e bairro.</div>
+      <h1>Mapa Eleitoral CPC I</h1>
+      <p>Acesse pelo link recebido da sua unidade.</p>
     </div>`;
+}
+
+function renderDemoExpired(){
+  const banner = document.getElementById('demoBanner');
+  if(banner) banner.remove();
+  document.getElementById('root').innerHTML = `
+    <div class="chooser">
+      <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
+      <h1>Link de demonstração expirado</h1>
+      <p>Este link foi usado apenas para a apresentação do sistema e não é mais válido. Para o uso oficial, utilize o link fornecido pela sua unidade.</p>
+    </div>`;
+}
+
+function showDemoBanner(){
+  const el = document.createElement('div');
+  el.id = 'demoBanner';
+  el.className = 'demo-banner';
+  el.textContent = 'MODO DEMONSTRAÇÃO';
+  el.title = 'Marcações de treino, separadas do sistema oficial';
+  document.body.appendChild(el);
 }
 
 // Lightweight per-device identification (name + graduação/posto) — NOT a login:
 // no password, no account, nothing server-enforced. Stored in this browser's
 // localStorage so every Situação/Guarnição write can be auto-tagged with who
 // made it, for accountability when several people share the same battalion link.
-const IDENTITY_KEY = 'cpc1_identity';
+// Demo links keep their own identity so whatever is typed during the presentation
+// doesn't carry over to the officer's real use of the system later.
+function identityKey(){ return DEMO_MODE ? 'cpc1_identity_demo' : 'cpc1_identity'; }
 function getIdentity(){
   try{
-    const raw = localStorage.getItem(IDENTITY_KEY);
+    const raw = localStorage.getItem(identityKey());
     if(!raw) return null;
     const obj = JSON.parse(raw);
     if(!obj || !obj.nome || !obj.nome.trim()) return null;
@@ -952,7 +1000,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     const patente = idPatenteInput.value.trim().slice(0,40);
     const nome = idNomeInput.value.trim().slice(0,60);
     if(!nome) return;
-    localStorage.setItem(IDENTITY_KEY, JSON.stringify({patente, nome}));
+    localStorage.setItem(identityKey(), JSON.stringify({patente, nome}));
     refreshIdChip();
     closeIdModal();
   });
@@ -1237,7 +1285,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     <div class="l4">COMANDO DE POLICIAMENTO DA CAPITAL I</div>
     ${battalionLine ? `<div class="l5">${esc(battalionLine)}</div>` : ''}
   </div>
-  <div class="meta">Emitido em<br>${nowStr()}</div>
+  <div class="meta">${DEMO_MODE ? '<b style="color:#b3261e">DEMONSTRAÇÃO — SEM VALOR OFICIAL</b><br>' : ''}Emitido em<br>${nowStr()}</div>
 </div>
 <div class="doctitle">POLICIAMENTO NOS LOCAIS DE VOTAÇÃO NA ÁREA DO CPC I</div>
 <div class="docsub">${esc(scopeLabel)} · ${suf}º turno</div>
