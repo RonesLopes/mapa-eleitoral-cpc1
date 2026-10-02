@@ -1193,10 +1193,43 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   // Companhia/Bairro/Recurso filters are deliberately still ignored (the point of the
   // report is a complete accountability view of whatever battalion(s) you're looking
   // at, not a narrower subset of it).
+  // UPDATE: the report now also follows the sidebar's Companhia and Bairro filters (for
+  // every link, including personal logins, whose locked filters start on their own area).
+  // Recurso and the text searches are still not applied — they narrow what you see on the
+  // map, not who is accountable.
   function reportEscolas(){
-    if(!multi) return escolas;
-    const on = {}; bpmChecks.forEach(c=>on[c.dataset.bpm]=c.checked);
-    return escolas.filter(e=>on[e.bpm]!==false);
+    const bpmOn = {}; bpmChecks.forEach(c=>bpmOn[c.dataset.bpm]=c.checked);
+    const ciaOn = {}; ciaChecks.forEach(c=>ciaOn[c.dataset.ciakey]=c.checked);
+    const bairroOn = {}; bairroChecks.forEach(c=>bairroOn[c.dataset.key]=c.checked);
+    return escolas.filter(e=> bpmOn[e.bpm]!==false && ciaOn[e.bpm+'|'+e.cia]!==false && bairroOn[e.bairroKey]!==false);
+  }
+  // Human-readable description of the Companhia/Bairro narrowing in force ('' = nothing narrowed).
+  function reportFilterText(){
+    const sc = reportEscolas();
+    if(!sc.length) return 'Nenhum local selecionado nos filtros';
+    const bpmsOn = new Set(bpmChecks.length ? bpmChecks.filter(c=>c.checked).map(c=>c.dataset.bpm) : escolas.map(e=>e.bpm));
+    const pool = escolas.filter(e=>bpmsOn.has(e.bpm));
+    const ciaKey = e=>e.bpm+'|'+e.cia;
+    const ciasSc = new Set(sc.map(ciaKey)), ciasAll = new Set(pool.map(ciaKey));
+    const parts = [];
+    if(ciasSc.size < ciasAll.size){
+      // per battalion: whole battalion -> just "N º BPM"; partial -> its companies
+      const byBpm = {};
+      ciasSc.forEach(k=>{ const i = k.indexOf('|'); (byBpm[k.slice(0,i)] = byBpm[k.slice(0,i)] || []).push(k.slice(i+1)); });
+      parts.push(Object.keys(byBpm).sort((x,y)=>parseInt(x)-parseInt(y)).map(bpm=>{
+        const total = [...ciasAll].filter(k=>k.startsWith(bpm+'|')).length;
+        const sel = byBpm[bpm].sort((x,y)=>x.localeCompare(y)).map(c=>c==='CIA não informada' ? 'Companhia não informada' : c);
+        if(sel.length === total) return bpm+'º BPM';
+        return (multi ? bpm+'º BPM · ' : '') + sel.join(', ');
+      }).join(', '));
+    }
+    const poolB = pool.filter(e=>ciasSc.has(ciaKey(e)));
+    const bSc = new Set(sc.map(e=>e.bairroKey)), bAll = new Set(poolB.map(e=>e.bairroKey));
+    if(bSc.size < bAll.size){
+      const names = [...bSc].map(k=>{ const e = sc.find(x=>x.bairroKey===k); return titleCasePt(e.bairro); }).sort((a,b)=>a.localeCompare(b));
+      parts.push(names.join(', '));
+    }
+    return parts.join(' — ');
   }
   function renderReport(){
     const suf = turno;
@@ -1229,7 +1262,8 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       });
     });
     const bpmListLocal = multi ? [...new Set(scopedEscolas.map(e=>e.bpm))].sort((a,b)=>parseInt(a)-parseInt(b)) : [];
-    document.getElementById('reportBpmBreakdown').innerHTML = bpmListLocal.map(bpm=>{
+    const scopeText = reportFilterText();
+    document.getElementById('reportBpmBreakdown').innerHTML = (scopeText ? `<div class="report-bpm-row"><span>Mostrando</span><span>${esc(scopeText)}</span></div>` : '') + bpmListLocal.map(bpm=>{
       let f=0,p=0,n=0;
       scopedEscolas.filter(e=>e.bpm===bpm).forEach(e=>{
         const val = statusOf(e);
@@ -1303,6 +1337,8 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
         scopeLabel = checkedBpms.map(b=>b+'º BPM').join(', ') + ' — CPC I';
       }
     }
+    const scopeNarrow = reportFilterText();
+    if(scopeNarrow) scopeLabel += ' · ' + scopeNarrow;
     let falta=0, pronto=0, naoMarcado=0;
     reportRows.forEach(({val})=>{ if(val==='falta') falta++; else if(val==='pronto') pronto++; else naoMarcado++; });
     const bpmListLocal = multi ? [...new Set(scopedEscolas.map(e=>e.bpm))].sort((a,b)=>parseInt(a)-parseInt(b)) : [];
