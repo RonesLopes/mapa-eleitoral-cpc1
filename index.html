@@ -449,12 +449,6 @@ a{color:inherit;}
   padding:10px 16px;box-shadow:var(--shadow);font-size:12.5px;text-align:center;
 }
 
-.demo-banner{
-  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(92vw,480px);
-  background:#b3261e;color:#fff;border-radius:999px;padding:6px 14px;box-shadow:var(--shadow);white-space:nowrap;
-  font-size:12px;font-weight:700;letter-spacing:.02em;text-align:center;pointer-events:none;
-}
-
 @media (prefers-reduced-motion: reduce){
   *{transition-duration:.001ms !important;animation-duration:.001ms !important;}
 }
@@ -481,22 +475,7 @@ try{
   console.error('Firebase indisponível:', err);
 }
 
-// Temporary presentation links (?t=<token>): each opens one battalion's map, but
-// every Situação/Guarnição read/write goes to "demo__"-prefixed docs in the same
-// collection, which the real links never look up — so practice marks can't leak
-// into the official status. Links stop working at DEMO_EXPIRES_AT. Client-side
-// only, like the rest of this project's access control.
-const DEMO_LINKS = {
-  '78hzqfh8': '1',
-  '454dkj3c': '2',
-  '3t5893kz': '20',
-  'mpa2zurc': '27',
-  'xfr82dwb': '37',
-};
-const DEMO_EXPIRES_AT = Date.parse('2026-10-02T17:00:00-03:00');
-var DEMO_MODE = false;
-
-function situacaoDocId(e){ return (DEMO_MODE ? 'demo__' : '') + (e.bairroKey + '__' + e.numero).replace(/\//g,'-'); }
+function situacaoDocId(e){ return (e.bairroKey + '__' + e.numero).replace(/\//g,'-'); }
 function timeAgo(date){
   const s = Math.floor((Date.now()-date.getTime())/1000);
   if(s<60) return 'agora mesmo';
@@ -674,21 +653,11 @@ function startApp(){
   const bpmParam = (params.get('bpm')||'').trim();
   const isAdmin = params.get('admin')==='1';
   const validBpms = Object.keys(DATA.bpmLabels);
-  const demoToken = (params.get('t')||'').trim();
+  // The presentation links (?t=<token>) from 2026-10-02 were retired after the
+  // demo; anyone still holding one gets the "expirado" page instead of the map.
 
-  if(demoToken){
-    const demoBpm = DEMO_LINKS[demoToken];
-    if(!demoBpm || !validBpms.includes(demoBpm) || Date.now() >= DEMO_EXPIRES_AT){
-      renderDemoExpired();
-      return;
-    }
-    DEMO_MODE = true;
-    renderApp([demoBpm]);
-    showDemoBanner();
-    // kick everyone out once the window closes, even with the page left open
-    const timer = setInterval(()=>{
-      if(Date.now() >= DEMO_EXPIRES_AT){ clearInterval(timer); renderDemoExpired(); }
-    }, 30000);
+  if(params.has('t')){
+    renderDemoExpired();
   }else if(isAdmin){
     renderApp(validBpms.slice());
   }else if(validBpms.includes(bpmParam)){
@@ -713,8 +682,6 @@ function renderChooser(){
 }
 
 function renderDemoExpired(){
-  const banner = document.getElementById('demoBanner');
-  if(banner) banner.remove();
   document.getElementById('root').innerHTML = `
     <div class="chooser">
       <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
@@ -723,25 +690,14 @@ function renderDemoExpired(){
     </div>`;
 }
 
-function showDemoBanner(){
-  const el = document.createElement('div');
-  el.id = 'demoBanner';
-  el.className = 'demo-banner';
-  el.textContent = 'MODO DEMONSTRAÇÃO';
-  el.title = 'Marcações de treino, separadas do sistema oficial';
-  document.body.appendChild(el);
-}
-
 // Lightweight per-device identification (name + graduação/posto) — NOT a login:
 // no password, no account, nothing server-enforced. Stored in this browser's
 // localStorage so every Situação/Guarnição write can be auto-tagged with who
 // made it, for accountability when several people share the same battalion link.
-// Demo links keep their own identity so whatever is typed during the presentation
-// doesn't carry over to the officer's real use of the system later.
-function identityKey(){ return DEMO_MODE ? 'cpc1_identity_demo' : 'cpc1_identity'; }
+const IDENTITY_KEY = 'cpc1_identity';
 function getIdentity(){
   try{
-    const raw = localStorage.getItem(identityKey());
+    const raw = localStorage.getItem(IDENTITY_KEY);
     if(!raw) return null;
     const obj = JSON.parse(raw);
     if(!obj || !obj.nome || !obj.nome.trim()) return null;
@@ -1000,7 +956,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     const patente = idPatenteInput.value.trim().slice(0,40);
     const nome = idNomeInput.value.trim().slice(0,60);
     if(!nome) return;
-    localStorage.setItem(identityKey(), JSON.stringify({patente, nome}));
+    localStorage.setItem(IDENTITY_KEY, JSON.stringify({patente, nome}));
     refreshIdChip();
     closeIdModal();
   });
@@ -1285,7 +1241,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     <div class="l4">COMANDO DE POLICIAMENTO DA CAPITAL I</div>
     ${battalionLine ? `<div class="l5">${esc(battalionLine)}</div>` : ''}
   </div>
-  <div class="meta">${DEMO_MODE ? '<b style="color:#b3261e">DEMONSTRAÇÃO — SEM VALOR OFICIAL</b><br>' : ''}Emitido em<br>${nowStr()}</div>
+  <div class="meta">Emitido em<br>${nowStr()}</div>
 </div>
 <div class="doctitle">POLICIAMENTO NOS LOCAIS DE VOTAÇÃO NA ÁREA DO CPC I</div>
 <div class="docsub">${esc(scopeLabel)} · ${suf}º turno</div>
