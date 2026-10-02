@@ -426,13 +426,6 @@ a{color:inherit;}
   font-family:var(--font-body);padding:0;text-align:left;
 }
 
-/* ---------- exit confirmation (phone "back" button) ---------- */
-.exit-actions{display:flex;gap:10px;margin-top:18px;}
-.exit-actions button{flex:1;padding:11px 8px;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;font-family:var(--font-body);}
-.exit-actions .exit-stay{border:none;background:var(--ink);color:var(--surface);}
-.exit-actions .exit-leave{border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);}
-.exit-hint{margin-top:12px;font-size:12px;color:var(--muted);line-height:1.4;}
-
 /* ---------- personal login ---------- */
 .login-form{max-width:360px;margin-top:6px;}
 .login-form .id-save{margin-top:20px;}
@@ -1043,17 +1036,6 @@ function renderApp(bpmList){
       <div class="detail" id="detail">
         <button class="close" id="detailClose" aria-label="Fechar">×</button>
         <div id="detailBody"></div>
-      </div>
-      <div class="id-overlay" id="exitOverlay" role="dialog" aria-modal="true" aria-labelledby="exitTitle">
-        <div class="id-panel">
-          <h2 id="exitTitle">Deseja sair do mapa?</h2>
-          <p class="id-sub">Você apertou o botão de voltar. Se quiser continuar usando o mapa, toque em “Não, ficar”.</p>
-          <div class="exit-actions">
-            <button type="button" class="exit-leave" id="exitYes">Sim, sair</button>
-            <button type="button" class="exit-stay" id="exitNo">Não, ficar</button>
-          </div>
-          <div class="exit-hint" id="exitHint" hidden>Para sair, feche esta aba ou volte ao aplicativo de onde você abriu o link.</div>
-        </div>
       </div>
       <div class="id-overlay" id="idOverlay">
         <div class="id-panel">
@@ -1762,40 +1744,6 @@ ${bpmBreakdownHtml}
   const legendToggle = document.getElementById('legendToggle');
   if(window.innerWidth <= 760) legend.classList.add('collapsed');
   legendToggle.addEventListener('click', ()=> legend.classList.toggle('collapsed'));
-
-  // ---- "voltar" do celular: não fecha o mapa sem perguntar ----
-  // Browsers only let a page keep an extra history entry that was added after the user
-  // touched it, so the guard entry is pushed on the first tap. Pressing back (Android
-  // button/gesture, iPhone swipe-back) then pops that entry instead of leaving: first
-  // it closes whatever panel is open, otherwise it asks "Deseja sair?" and re-arms
-  // the guard so the page stays put until the user answers "Sim".
-  const exitOverlay = document.getElementById('exitOverlay');
-  const exitHint = document.getElementById('exitHint');
-  let guardArmed = false, leaving = false;
-  function pushGuard(){ try{ history.pushState({cpc1guard:true}, '', location.href); }catch(err){} }
-  function armGuard(){ if(guardArmed) return; guardArmed = true; pushGuard(); }
-  ['pointerdown','keydown','touchstart'].forEach(t=>window.addEventListener(t, armGuard, {once:true, passive:true}));
-  window.addEventListener('popstate', ()=>{
-    if(!guardArmed || leaving) return;
-    pushGuard();
-    if(idOverlay.classList.contains('open')) return;           // identification is mandatory: just stay
-    if(exitOverlay.classList.contains('open')){ return; }      // already asking
-    if(reportOverlay.classList.contains('open')){ document.getElementById('reportClose').click(); return; }
-    if(detail.classList.contains('open')){ document.getElementById('detailClose').click(); return; }
-    if(sidebar.classList.contains('open')){ backdrop.click(); return; }
-    exitHint.hidden = true;
-    exitOverlay.classList.add('open');
-  });
-  document.getElementById('exitNo').addEventListener('click', ()=> exitOverlay.classList.remove('open'));
-  document.getElementById('exitYes').addEventListener('click', ()=>{
-    leaving = true;
-    history.go(-2);   // over our guard entry and the page's own entry
-    setTimeout(()=>{
-      // still here = nothing to go back to (link opened straight in a tab): can't close it from the page
-      leaving = false;
-      exitHint.hidden = false;
-    }, 500);
-  });
 
   window.addEventListener('resize', ()=>map.invalidateSize());
   setTimeout(()=>map.invalidateSize(), 200);
