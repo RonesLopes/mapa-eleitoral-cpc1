@@ -301,11 +301,18 @@ a{color:inherit;}
 .situacao-btn:hover{background:var(--surface-2);}
 .situacao-btn.falta.active{background:var(--critical);color:var(--on-critical);border-color:var(--critical);}
 .situacao-btn.pronto.active{background:#0ca30c;color:#fff;border-color:#0ca30c;}
+.situacao-btn:disabled{cursor:default;opacity:.55;}
+.situacao-btn:disabled:hover{background:var(--surface);}
 .situacao-meta{margin-top:8px;font-size:11px;color:var(--muted);min-height:14px;}
+.situacao-readonly-note{
+  font-size:11.5px;color:var(--muted);background:var(--surface-2);border-radius:8px;
+  padding:8px 10px;margin-bottom:12px;line-height:1.4;
+}
 .guarnicao-input{
   width:100%;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
   border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical;margin-bottom:8px;
 }
+.guarnicao-input[readonly]{background:var(--surface-2);color:var(--muted);resize:none;}
 .situacao-save{
   border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);border-radius:8px;
   padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--font-body);
@@ -807,7 +814,7 @@ function renderApp(bpmList){
           <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
           <h1>${esc(headerTitle)}</h1>
           <p>${esc(headerSub)}</p>
-          <button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>
+          ${multi ? '' : `<button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>`}
         </div>
         <div class="stats">
           <div class="stat"><span class="v tabular">${escolas.length}</span><span class="l">Locais</span></div>
@@ -927,6 +934,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   const idNomeInput = document.getElementById('idNome');
   const idChipBtn = document.getElementById('idChipBtn');
   function refreshIdChip(){
+    if(!idChipBtn) return;
     const id = getIdentity();
     idChipBtn.textContent = id ? `👤 Você: ${identityLabel(id)} (trocar)` : '👤 Identificar-se';
   }
@@ -938,7 +946,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     idPatenteInput.focus();
   }
   function closeIdModal(){ idOverlay.classList.remove('open'); }
-  idChipBtn.addEventListener('click', openIdModal);
+  if(idChipBtn) idChipBtn.addEventListener('click', openIdModal);
   idForm.addEventListener('submit', (ev)=>{
     ev.preventDefault();
     const patente = idPatenteInput.value.trim().slice(0,40);
@@ -948,7 +956,9 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     refreshIdChip();
     closeIdModal();
   });
-  if(!getIdentity()) openIdModal();
+  // Gerência Geral (multi=true) is view-only (see openDetail below), so there's
+  // nothing there to attribute an edit to — skip the identification prompt entirely.
+  if(!multi && !getIdentity()) openIdModal();
   function currentAutorLabel(){
     const id = getIdentity();
     return id ? identityLabel(id) : null;
@@ -1273,6 +1283,13 @@ ${bpmBreakdownHtml}
   let situacaoUnsub = null;
   function openDetail(e, cia, color){
     const statusOk = e.status === 'Localizado';
+    // Gerência Geral (the multi-battalion admin link) is view-only: it can see every
+    // battalion's Situação/Guarnição live, but editing stays exclusive to each
+    // battalion's own link, so the 3+ officers sharing one battalion link are the
+    // only ones who can actually mark things there. This is a UI-level restriction
+    // only (no backend auth exists in this project by design) — same spirit as the
+    // 5 locked battalion links not being able to see each other.
+    const readOnly = multi;
     detailBody.innerHTML = `
       <div class="eyebrow2">Nº ${esc(e.numero)} · ${esc(titleCasePt(e.bairro))}</div>
       <h2>${esc(e.local)}</h2>
@@ -1287,15 +1304,16 @@ ${bpmBreakdownHtml}
         <dt>Status</dt><dd><span class="statusbadge ${statusOk?'ok':'warn'}">${statusOk?'✓':'⚠'} ${esc(e.status)}</span></dd>
       </dl>
       <div class="situacao-section">
+        ${readOnly ? `<div class="situacao-readonly-note">👁️ Gerência Geral — somente visualização. Para marcar Situação ou Guarnição, acesse pelo link do próprio batalhão.</div>` : ''}
         <div class="situacao-label" id="situacaoSectionLabel">Situação</div>
         <div class="situacao-group">
-          <button type="button" class="situacao-btn falta" data-val="falta">Falta</button>
-          <button type="button" class="situacao-btn pronto" data-val="pronto">Pronto</button>
+          <button type="button" class="situacao-btn falta" data-val="falta" ${readOnly?'disabled':''}>Falta</button>
+          <button type="button" class="situacao-btn pronto" data-val="pronto" ${readOnly?'disabled':''}>Pronto</button>
         </div>
         <div class="situacao-meta" id="situacaoMeta">Carregando…</div>
         <div class="situacao-label" id="guarnicaoSectionLabel" style="margin-top:14px;">Guarnição (GU)</div>
-        <textarea id="guarnicaoInput" class="guarnicao-input" rows="2" placeholder="Nomes dos policiais na guarnição…"></textarea>
-        <button type="button" class="situacao-save" id="guarnicaoSave">Salvar guarnição</button>
+        <textarea id="guarnicaoInput" class="guarnicao-input" rows="2" placeholder="Nomes dos policiais na guarnição…" ${readOnly?'readonly':''}></textarea>
+        ${readOnly ? '' : `<button type="button" class="situacao-save" id="guarnicaoSave">Salvar guarnição</button>`}
         <div class="situacao-meta" id="guarnicaoMeta"></div>
       </div>`;
     detail.classList.add('open');
@@ -1313,7 +1331,7 @@ ${bpmBreakdownHtml}
       metaEl.textContent = 'Situação indisponível no momento.';
       btns.forEach(b=>b.disabled = true);
       guarnicaoInput.disabled = true;
-      guarnicaoSaveBtn.disabled = true;
+      if(guarnicaoSaveBtn) guarnicaoSaveBtn.disabled = true;
       return;
     }
     const docRef = db.collection('status').doc(situacaoDocId(e));
@@ -1335,21 +1353,23 @@ ${bpmBreakdownHtml}
     }
     refreshDetailTurnoUI = render;
 
-    btns.forEach(b=>b.addEventListener('click', ()=>{
-      const suf = turno;
-      const curVal = lastData['situacao'+suf] || null;
-      const next = curVal===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
-      metaEl.textContent = 'Salvando…';
-      docRef.set({ ['situacao'+suf]: next, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
-        .catch(err=>{ metaEl.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
-    }));
-    guarnicaoSaveBtn.addEventListener('click', ()=>{
-      const suf = turno;
-      guarnicaoMeta.textContent = 'Salvando…';
-      docRef.set({ ['guarnicao'+suf]: guarnicaoInput.value.slice(0,500), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
-        .then(()=>{ guarnicaoMeta.textContent = 'Guarnição salva.'; })
-        .catch(err=>{ guarnicaoMeta.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
-    });
+    if(!readOnly){
+      btns.forEach(b=>b.addEventListener('click', ()=>{
+        const suf = turno;
+        const curVal = lastData['situacao'+suf] || null;
+        const next = curVal===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
+        metaEl.textContent = 'Salvando…';
+        docRef.set({ ['situacao'+suf]: next, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
+          .catch(err=>{ metaEl.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
+      }));
+      guarnicaoSaveBtn.addEventListener('click', ()=>{
+        const suf = turno;
+        guarnicaoMeta.textContent = 'Salvando…';
+        docRef.set({ ['guarnicao'+suf]: guarnicaoInput.value.slice(0,500), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
+          .then(()=>{ guarnicaoMeta.textContent = 'Guarnição salva.'; })
+          .catch(err=>{ guarnicaoMeta.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
+      });
+    }
     situacaoUnsub = docRef.onSnapshot(snap=>{
       lastData = snap.data() || {};
       render();
