@@ -855,7 +855,7 @@ function renderApp(bpmList){
         <div class="legend" id="legend">
           <div class="lhead" id="legendToggle">Legenda <span class="chev">▾</span></div>
           <div class="lbody">
-            ${ordinalsPresent.map(ord=>`<div class="lrow"><span class="swatch" style="background:${ORDINAL_COLOR[ord]}"></span>${esc(ORDINAL_LABEL[ord])}<span class="count tabular">${escolas.filter(e=>ciaOrdinal(e.cia)===ord).length}</span></div>`).join('')}
+            ${ordinalsPresent.map(ord=>`<div class="lrow" data-ord="${ord}"><span class="swatch" style="background:${ORDINAL_COLOR[ord]}"></span>${esc(ORDINAL_LABEL[ord])}<span class="count tabular">${escolas.filter(e=>ciaOrdinal(e.cia)===ord).length}</span></div>`).join('')}
             <div class="lsec">
               ${Object.keys(DATA.resourceLabels).filter(k=>k!=='outro').map(k=>`<div class="lrow"><img class="lthumb" src="icons/${k}.png" alt="">${esc(DATA.resourceLabels[k])}</div>`).join('')}
             </div>
@@ -1454,6 +1454,7 @@ ${bpmBreakdownHtml}
   function update(){
     const {ciaOn, bairroOn, recursoOn, bpmOn, q, qRecurso} = currentFilters();
     let visible = 0;
+    const legendCounts = {};
     markerEntries.forEach(({layer, e})=>{
       const cat = (turno==='1' ? e.turno1Cat : e.turno2Cat) || '__none__';
       const rawTurno = turno==='1' ? e.turno1 : e.turno2;
@@ -1461,7 +1462,7 @@ ${bpmBreakdownHtml}
       const on = (ciaOn[e.bpm+'|'+e.cia]!==false) && (bairroOn[e.bairroKey]!==false) && (recursoOn[cat]!==false) &&
         (bpmOn[e.bpm]!==false) && (!q || norm(e.local).includes(q) || norm(e.endereco).includes(q)) &&
         (!qRecurso || norm(catLabel).includes(qRecurso) || norm(rawTurno||'').includes(qRecurso));
-      if(on){ if(!map.hasLayer(layer)) layer.addTo(map); visible++; }
+      if(on){ if(!map.hasLayer(layer)) layer.addTo(map); visible++; const o = ciaOrdinal(e.cia); legendCounts[o] = (legendCounts[o]||0) + 1; }
       else if(map.hasLayer(layer)) map.removeLayer(layer);
     });
     bairroEntries.forEach(({layer, key, bpm, cia})=>{
@@ -1472,6 +1473,13 @@ ${bpmBreakdownHtml}
       layer.setStyle({opacity:on?1:0.10, fillOpacity:on?0.20:0.02});
     });
     visibleCountEl.textContent = visible;
+    // Legend (1ª/2ª/3ª/4ª CIA) follows the filters: shows how many locations of each
+    // company ordinal are currently visible, summed across the battalions checked.
+    document.querySelectorAll('#legend .lrow[data-ord]').forEach(row=>{
+      const n = legendCounts[row.dataset.ord] || 0;
+      row.querySelector('.count').textContent = n;
+      row.style.opacity = n ? '' : '.45';
+    });
   }
 
   // ---- cascading filters: checking a Batalhão narrows the Companhia list to its
