@@ -6,26 +6,48 @@ service cloud.firestore {
     // tracked SEPARATELY per turno (1 and 2 use different officers) - hence
     // situacao1/guarnicao1/updatedAt1 and situacao2/guarnicao2/updatedAt2.
     // autor1/autor2: lightweight per-device identification (name + graduação,
-    // not a real login - no auth layer, just an attribution label picked by
+    // not a login for the battalion links - just an attribution label picked by
     // the client and sent along with every write) so multiple officers
     // sharing the same battalion link can tell who last touched a location.
     // Public read (anyone with the map link can see current status) and
     // public write, but only ever writing these fields with validated shapes
     // - no other collection or field can be touched.
+    // Signed-in users (the officers with a personal login, see index.html USERS) may
+    // only write docs whose bairro is on their own list below — enforced HERE, not just
+    // in the UI. Requests with no sign-in (the battalion links) keep the original
+    // public-write behaviour, unchanged.
+    function areaOf(email){
+      return {
+      'pedrosa@cpc1.app': ['1|SACRAMENTA', '1|TELEGRAFO SEM FIO'],
+      'thais@cpc1.app': ['1|MARCO'],
+      'sales@cpc1.app': ['1|PEDREIRA'],
+      'amanajas@cpc1.app': ['2|CAMPINA', '2|CIDADE VELHA', '2|UMARIZAL', '2|REDUTO'],
+      'karyn@cpc1.app': ['2|SAO BRAS', '2|FATIMA', '2|NAZARE', '2|BATISTA CAMPOS'],
+      'tatiane@cpc1.app': ['20|CONDOR', '20|CREMACAO', '20|JURUNAS'],
+      'anjos@cpc1.app': ['27|MARAMBAIA', '27|CASTANHEIRA'],
+      'sidney@cpc1.app': ['27|CURIO UTINGA', '27|SOUZA'],
+      'noronha@cpc1.app': ['37|GUAMA', '37|UNIVERSITARIO'],
+      'vanderlei@cpc1.app': ['37|TERRA FIRME', '37|CANUDOS']
+      }.get(email, []);
+    }
+    function validShape(){
+      let d = request.resource.data;
+      return d.keys().hasOnly(
+          ['situacao1', 'guarnicao1', 'updatedAt1', 'autor1', 'situacao2', 'guarnicao2', 'updatedAt2', 'autor2'])
+        && (!('situacao1' in d) || d.situacao1 in ['falta', 'pronto'])
+        && (!('situacao2' in d) || d.situacao2 in ['falta', 'pronto'])
+        && (!('guarnicao1' in d) || (d.guarnicao1 is string && d.guarnicao1.size() <= 500))
+        && (!('guarnicao2' in d) || (d.guarnicao2 is string && d.guarnicao2.size() <= 500))
+        && (!('autor1' in d) || (d.autor1 is string && d.autor1.size() <= 100))
+        && (!('autor2' in d) || (d.autor2 is string && d.autor2.size() <= 100));
+    }
+    function inMyArea(docId){
+      return request.auth != null && request.auth.token.email != null
+        && docId.split('__')[0] in areaOf(request.auth.token.email);
+    }
     match /status/{docId} {
       allow read: if true;
-      allow create, update: if request.resource.data.keys().hasOnly(
-          ['situacao1', 'guarnicao1', 'updatedAt1', 'autor1', 'situacao2', 'guarnicao2', 'updatedAt2', 'autor2'])
-        && (!('situacao1' in request.resource.data) || request.resource.data.situacao1 in ['falta', 'pronto'])
-        && (!('situacao2' in request.resource.data) || request.resource.data.situacao2 in ['falta', 'pronto'])
-        && (!('guarnicao1' in request.resource.data) ||
-            (request.resource.data.guarnicao1 is string && request.resource.data.guarnicao1.size() <= 500))
-        && (!('guarnicao2' in request.resource.data) ||
-            (request.resource.data.guarnicao2 is string && request.resource.data.guarnicao2.size() <= 500))
-        && (!('autor1' in request.resource.data) ||
-            (request.resource.data.autor1 is string && request.resource.data.autor1.size() <= 100))
-        && (!('autor2' in request.resource.data) ||
-            (request.resource.data.autor2 is string && request.resource.data.autor2.size() <= 100));
+      allow create, update: if validShape() && (request.auth == null || inMyArea(docId));
       allow delete: if false;
     }
     match /{document=**} {

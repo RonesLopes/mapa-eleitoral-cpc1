@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <script src="vendor/firebase/firebase-app-compat.js"></script>
 <script src="vendor/firebase/firebase-firestore-compat.js"></script>
+<script src="vendor/firebase/firebase-auth-compat.js"></script>
 <style>
 :root{
   --page:#f2f3ee;
@@ -417,6 +418,14 @@ a{color:inherit;}
   font-family:var(--font-body);padding:0;text-align:left;
 }
 
+/* ---------- personal login ---------- */
+.login-form{max-width:360px;margin-top:6px;}
+.login-form .id-save{margin-top:20px;}
+.login-err{min-height:18px;margin-top:12px;font-size:12.5px;color:var(--critical);line-height:1.4;}
+.login-show{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);cursor:pointer;}
+.area-note{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.4;}
+.area-note b{color:var(--ink-2);font-weight:600;}
+
 /* ---------- chooser ---------- */
 .chooser{max-width:760px;margin:0 auto;padding:64px 20px 60px;}
 .chooser .hdr{margin-bottom:8px;}
@@ -468,12 +477,22 @@ const firebaseConfig = {
   messagingSenderId: "63196435449"
 };
 let db = null;
+let auth = null;
 try{
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
+  auth = firebase.auth();
 }catch(err){
   console.error('Firebase indisponível:', err);
 }
+
+// Personal logins (?login=1): officers who may edit only their own bairros. The
+// username is typed without a domain; Firebase Auth stores it as user@AUTH_DOMAIN
+// (a label, not a real mailbox). This table drives the UI only — the real
+// enforcement of who can write which bairro lives in firestore.rules (areaOf).
+const AUTH_DOMAIN = 'cpc1.app';
+const USERS = {"pedrosa":{"patente":"1º Ten QOPM","nome":"Pedrosa","bpm":"1","bairros":["1|SACRAMENTA","1|TELEGRAFO SEM FIO"]},"thais":{"patente":"1º Ten QOPM","nome":"Thais","bpm":"1","bairros":["1|MARCO"]},"sales":{"patente":"1º Ten QOPM","nome":"Sales","bpm":"1","bairros":["1|PEDREIRA"]},"amanajas":{"patente":"1º Ten QOPM","nome":"Amanajás","bpm":"2","bairros":["2|CAMPINA","2|CIDADE VELHA","2|UMARIZAL","2|REDUTO"]},"karyn":{"patente":"1º Ten QOPM","nome":"Karyn","bpm":"2","bairros":["2|SAO BRAS","2|FATIMA","2|NAZARE","2|BATISTA CAMPOS"]},"tatiane":{"patente":"1º Ten QOPM","nome":"Tatiane","bpm":"20","bairros":["20|CONDOR","20|CREMACAO","20|JURUNAS"]},"anjos":{"patente":"1º Ten QOPM","nome":"Anjos","bpm":"27","bairros":["27|MARAMBAIA","27|CASTANHEIRA"]},"sidney":{"patente":"1º Ten QOPM","nome":"Sidney","bpm":"27","bairros":["27|CURIO UTINGA","27|SOUZA"]},"noronha":{"patente":"1º Ten QOPM","nome":"Noronha","bpm":"37","bairros":["37|GUAMA","37|UNIVERSITARIO"]},"vanderlei":{"patente":"1º Ten QOPM","nome":"Vanderlei","bpm":"37","bairros":["37|TERRA FIRME","37|CANUDOS"]}};
+var AUTH_USER = null;
 
 function situacaoDocId(e){ return (e.bairroKey + '__' + e.numero).replace(/\//g,'-'); }
 function timeAgo(date){
@@ -658,13 +677,107 @@ function startApp(){
 
   if(params.has('t')){
     renderDemoExpired();
-  }else if(isAdmin){
-    renderApp(validBpms.slice());
-  }else if(validBpms.includes(bpmParam)){
-    renderApp([bpmParam]);
+  }else if(params.has('login')){
+    startLogin();
+  }else if(isAdmin || validBpms.includes(bpmParam)){
+    // The shared battalion/admin links are anonymous by design: drop any personal
+    // login left over on this browser so it can't change how these links behave.
+    dropPersonalSession().then(()=>{
+      if(isAdmin) renderApp(validBpms.slice());
+      else renderApp([bpmParam]);
+    });
   }else{
     renderChooser();
   }
+}
+
+function authReady(){
+  return new Promise(resolve=>{
+    if(!auth){ resolve(null); return; }
+    const off = auth.onAuthStateChanged(u=>{ off(); resolve(u); }, ()=>{ off(); resolve(null); });
+  });
+}
+async function dropPersonalSession(){
+  try{
+    const u = await authReady();
+    if(u) await auth.signOut();
+  }catch(err){ console.warn('Could not clear personal session', err); }
+}
+function profileForUser(u){
+  const email = (u && u.email) || '';
+  if(!email.endsWith('@'+AUTH_DOMAIN)) return null;
+  const name = email.slice(0, email.length - AUTH_DOMAIN.length - 1);
+  const p = USERS[name];
+  return p ? Object.assign({username:name}, p) : null;
+}
+function enterAsUser(p){
+  if(!DATA.bpmLabels[p.bpm]){
+    document.getElementById('root').innerHTML = `<div class="chooser"><h1>Batalhão indisponível</h1><p>O ${esc(p.bpm)}º BPM não está na planilha neste momento. Tente novamente mais tarde.</p></div>`;
+    return;
+  }
+  AUTH_USER = {
+    username: p.username,
+    label: ((p.patente||'')+' '+p.nome).trim(),
+    bpm: p.bpm,
+    bairros: new Set(p.bairros)
+  };
+  renderApp([p.bpm]);
+}
+async function startLogin(){
+  const u = await authReady();
+  const p = u && profileForUser(u);
+  if(p){ enterAsUser(p); return; }
+  if(u){ try{ await auth.signOut(); }catch(err){} }
+  renderLogin();
+}
+function loginErrorText(err){
+  const c = (err && err.code) || '';
+  if(c==='auth/operation-not-allowed' || c==='auth/configuration-not-found' || (err && /CONFIGURATION_NOT_FOUND/.test(err.message||''))) return 'O acesso por login ainda não foi habilitado. Avise o administrador do sistema.';
+  if(c==='auth/too-many-requests') return 'Muitas tentativas. Aguarde alguns minutos e tente de novo.';
+  if(c==='auth/network-request-failed') return 'Sem conexão com a internet. Verifique e tente de novo.';
+  if(c==='auth/user-disabled') return 'Este acesso está desativado.';
+  return 'Usuário ou senha incorretos.';
+}
+function renderLogin(){
+  document.getElementById('root').innerHTML = `
+    <div class="chooser">
+      <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
+      <h1>Acesso por login</h1>
+      <p>Entre com o usuário e a senha que você recebeu.</p>
+      <form class="login-form" id="loginForm" autocomplete="on">
+        <label class="id-label" for="loginUser">Usuário</label>
+        <input type="text" class="id-input" id="loginUser" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+        <label class="id-label" for="loginPass">Senha</label>
+        <input type="password" class="id-input" id="loginPass" name="password" autocomplete="current-password" required>
+        <label class="login-show"><input type="checkbox" id="loginShow"> Mostrar senha</label>
+        <div class="login-err" id="loginErr" role="alert"></div>
+        <button type="submit" class="id-save" id="loginBtn">Entrar</button>
+      </form>
+    </div>`;
+  const form = document.getElementById('loginForm');
+  const errEl = document.getElementById('loginErr');
+  const btn = document.getElementById('loginBtn');
+  const passEl = document.getElementById('loginPass');
+  document.getElementById('loginShow').addEventListener('change', ev=>{ passEl.type = ev.target.checked ? 'text' : 'password'; });
+  form.addEventListener('submit', async ev=>{
+    ev.preventDefault();
+    errEl.textContent = '';
+    // accept "pedrosa", "Pedrosa", "pedrosa@cpc1" ...: keep only the part before "@", no accents/spaces
+    const name = document.getElementById('loginUser').value.trim().split('@')[0]
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();
+    if(!name){ errEl.textContent = 'Informe o usuário.'; return; }
+    btn.disabled = true; btn.textContent = 'Entrando…';
+    try{
+      const cred = await auth.signInWithEmailAndPassword(name+'@'+AUTH_DOMAIN, passEl.value);
+      const p = profileForUser(cred.user);
+      if(!p){ await auth.signOut(); throw {code:'auth/invalid-credential'}; }
+      enterAsUser(p);
+    }catch(err){
+      errEl.textContent = loginErrorText(err);
+      btn.disabled = false; btn.textContent = 'Entrar';
+    }
+  });
+  document.getElementById('loginUser').focus();
 }
 
 boot();
@@ -725,6 +838,15 @@ function resourceChecklistRows(escolas, turno){
   }).join('') + (hasNoResource ? `<label class="check-row"><input type="checkbox" class="recurso-check" data-recurso="__none__" checked>
       <span class="swatch" style="background:var(--cia-x)"></span>
       <span class="name">Sem recurso definido</span><span class="count tabular">${escolas.filter(e=>!getCat(e)).length}</span></label>` : '');
+}
+
+// Human-readable list of the bairros the signed-in officer may edit (names from the sheet).
+function authAreaNames(escolas){
+  if(!AUTH_USER) return '';
+  return [...AUTH_USER.bairros].map(k=>{
+    const e = escolas.find(x=>x.bairroKey===k);
+    return e ? titleCasePt(e.bairro) : null;
+  }).filter(Boolean).join(', ') || '—';
 }
 
 function renderApp(bpmList){
@@ -806,7 +928,9 @@ function renderApp(bpmList){
   const headerSub = multi ? 'Todos os batalhões — CPC I' : DATA.bpmLabels[bpmList[0]];
   const identity = getIdentity();
   const idChipText = identity ? `Você: ${esc(identityLabel(identity))} (trocar)` : 'Identificar-se';
-  const footnoteText = multi
+  const footnoteText = AUTH_USER
+    ? `Fonte: O.S. 324 — Operação Eleições 2026. Acesso pessoal — vê o ${bpmList[0]}º BPM inteiro e edita apenas os seus bairros.`
+    : multi
     ? `Fonte: O.S. 324 — Operação Eleições 2026. Link de gerência geral — vê e filtra todos os batalhões do CPC I.`
     : `Fonte: O.S. 324 — Operação Eleições 2026. Link de acesso exclusivo ao ${bpmList[0]}º BPM.`;
 
@@ -818,7 +942,7 @@ function renderApp(bpmList){
           <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
           <h1>${esc(headerTitle)}</h1>
           <p>${esc(headerSub)}</p>
-          ${multi ? '' : `<button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>`}
+          ${AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div>` : (multi ? '' : `<button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>`)}
         </div>
         <div class="stats">
           <div class="stat"><span class="v tabular">${escolas.length}</span><span class="l">Locais</span></div>
@@ -962,8 +1086,13 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   });
   // Gerência Geral (multi=true) is view-only (see openDetail below), so there's
   // nothing there to attribute an edit to — skip the identification prompt entirely.
-  if(!multi && !getIdentity()) openIdModal();
+  if(!multi && !AUTH_USER && !getIdentity()) openIdModal();
+  const logoutBtn = document.getElementById('logoutBtn');
+  if(logoutBtn) logoutBtn.addEventListener('click', ()=>{
+    (auth ? auth.signOut() : Promise.resolve()).catch(()=>{}).then(()=>{ location.href = location.pathname + '?login=1'; });
+  });
   function currentAutorLabel(){
+    if(AUTH_USER) return AUTH_USER.label;
     const id = getIdentity();
     return id ? identityLabel(id) : null;
   }
@@ -1324,7 +1453,8 @@ ${bpmBreakdownHtml}
     // only ones who can actually mark things there. This is a UI-level restriction
     // only (no backend auth exists in this project by design) — same spirit as the
     // 5 locked battalion links not being able to see each other.
-    const readOnly = multi;
+    const outOfArea = !!AUTH_USER && !AUTH_USER.bairros.has(e.bairroKey);
+    const readOnly = multi || outOfArea;
     detailBody.innerHTML = `
       <div class="eyebrow2">Nº ${esc(e.numero)} · ${esc(titleCasePt(e.bairro))}</div>
       <h2>${esc(e.local)}</h2>
@@ -1339,7 +1469,7 @@ ${bpmBreakdownHtml}
         <dt>Status</dt><dd><span class="statusbadge ${statusOk?'ok':'warn'}">${statusOk?'✓':'⚠'} ${esc(e.status)}</span></dd>
       </dl>
       <div class="situacao-section">
-        ${readOnly ? `<div class="situacao-readonly-note">👁️ Gerência Geral — somente visualização. Para marcar Situação ou Guarnição, acesse pelo link do próprio batalhão.</div>` : ''}
+        ${readOnly ? `<div class="situacao-readonly-note">${outOfArea ? `🔒 Fora da sua área — somente visualização. Você edita: ${esc(authAreaNames(escolas))}.` : '👁️ Gerência Geral — somente visualização. Para marcar Situação ou Guarnição, acesse pelo link do próprio batalhão.'}</div>` : ''}
         <div class="situacao-label" id="situacaoSectionLabel">Situação</div>
         <div class="situacao-group">
           <button type="button" class="situacao-btn falta" data-val="falta" ${readOnly?'disabled':''}>Falta</button>
@@ -1395,14 +1525,14 @@ ${bpmBreakdownHtml}
         const next = curVal===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
         metaEl.textContent = 'Salvando…';
         docRef.set({ ['situacao'+suf]: next, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
-          .catch(err=>{ metaEl.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
+          .catch(err=>{ metaEl.textContent = (err && err.code==='permission-denied') ? 'Sem permissão para este bairro.' : 'Não foi possível salvar. Tente de novo.'; console.error(err); });
       }));
       guarnicaoSaveBtn.addEventListener('click', ()=>{
         const suf = turno;
         guarnicaoMeta.textContent = 'Salvando…';
         docRef.set({ ['guarnicao'+suf]: guarnicaoInput.value.slice(0,500), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
           .then(()=>{ guarnicaoMeta.textContent = 'Guarnição salva.'; })
-          .catch(err=>{ guarnicaoMeta.textContent = 'Não foi possível salvar. Tente de novo.'; console.error(err); });
+          .catch(err=>{ guarnicaoMeta.textContent = (err && err.code==='permission-denied') ? 'Sem permissão para este bairro.' : 'Não foi possível salvar. Tente de novo.'; console.error(err); });
       });
     }
     situacaoUnsub = docRef.onSnapshot(snap=>{
