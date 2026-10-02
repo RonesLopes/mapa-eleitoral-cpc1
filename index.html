@@ -543,6 +543,21 @@ function isAdminUser(){ return !!(AUTH_USER && AUTH_USER.admin); }
 // true when this location's bairro may be edited by whoever is signed in (everyone, when nobody is)
 function ownsBairro(k){ return !AUTH_USER || isAdminUser() || AUTH_USER.bairros.has(k); }
 
+// Who answers for each bairro, shown in the location's detail panel: the tenentes from
+// USERS above (same table that drives their logins) plus the two Oficiais de Dia, who
+// have no account. (Tatiane's "toda a área do batalhão" is just all three 20º bairros.)
+const OFICIAIS_DIA = {
+  '1|BARREIRO': 'Oficial de Dia do 1º BPM',
+  '27|MARACANGALHA': 'Oficial de Dia do 27º BPM',
+  '27|VAL-DE-CANS': 'Oficial de Dia do 27º BPM'
+};
+function responsavelDe(bairroKey){
+  for(const u of Object.values(USERS)){
+    if(!u.admin && u.bairros.includes(bairroKey)) return ((u.patente||'')+' '+u.nome).trim();
+  }
+  return OFICIAIS_DIA[bairroKey] || null;
+}
+
 function situacaoDocId(e){ return (e.bairroKey + '__' + e.numero).replace(/\//g,'-'); }
 function timeAgo(date){
   const s = Math.floor((Date.now()-date.getTime())/1000);
@@ -1580,6 +1595,7 @@ ${bpmBreakdownHtml}
       <span class="ciachip"><span class="swatch" style="background:${color}"></span>${esc(cia==='CIA não informada'?'Companhia não informada':cia)}</span>
       <dl>
         <dt>Batalhão</dt><dd>${esc(DATA.bpmLabels[e.bpm])}</dd>
+        ${responsavelDe(e.bairroKey) ? `<dt>Responsável</dt><dd><b>${esc(responsavelDe(e.bairroKey))}</b></dd>` : ''}
         <dt>Endereço</dt><dd>${esc(e.endereco)||'—'}</dd>
         <dt>Eleitores</dt><dd class="tabular">${fmtInt(e.eleitoresNum)}</dd>
         <dt>1º turno</dt><dd>${esc(e.turno1)||'—'}</dd>
