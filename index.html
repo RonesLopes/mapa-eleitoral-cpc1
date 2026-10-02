@@ -473,6 +473,24 @@ a{color:inherit;}
   padding:10px 16px;box-shadow:var(--shadow);font-size:12.5px;text-align:center;
 }
 
+/* ---------- phones: keep every control inside the visible screen ----------
+   On phones 100vh is the height with the browser's address bar HIDDEN, so while the
+   bar is showing the map is taller than the screen: the legend / zoom buttons fall
+   below the edge and dragging scrolls the whole page (taking the Filtros button and
+   the counter off the top). On the map view the app is pinned to exactly the visible
+   area instead, the page itself never scrolls, and pull-to-refresh can't fire while
+   panning the map. */
+body.map-view{overflow:hidden;overscroll-behavior:none;}
+@media (max-width:760px){
+  body.map-view .app{position:fixed;inset:0;min-height:0;height:100%;grid-template-rows:minmax(0,1fr);}
+  body.map-view .mapwrap{min-height:0;height:100%;}
+  body.map-view .sidebar{max-height:none;}
+  /* legend never grows past the space under the counter / turno buttons */
+  .legend{max-height:calc(100% - 132px);}
+  .detail{max-height:72vh;max-height:72dvh;}
+  .report-panel{max-height:86vh;max-height:86dvh;}
+}
+
 @media (prefers-reduced-motion: reduce){
   *{transition-duration:.001ms !important;animation-duration:.001ms !important;}
 }
@@ -865,6 +883,7 @@ function authAreaNames(escolas){
 }
 
 function renderApp(bpmList){
+  document.body.classList.add('map-view');
   try{
   const multi = bpmList.length > 1;
   const bairros = DATA.bairros.filter(b=>bpmList.includes(b.bpm));
