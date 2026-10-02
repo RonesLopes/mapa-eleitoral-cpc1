@@ -1025,11 +1025,23 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     const data = situacaoDocs[situacaoDocId(e)];
     return data ? (data['situacao'+turno] || null) : null;
   }
+  // In Gerência Geral (multi=true), the Relatório/PDF now follow whichever battalions
+  // are checked in the sidebar's Batalhão filter — same idea as the 5 locked single-
+  // battalion links already giving a report scoped to just their own battalion.
+  // Companhia/Bairro/Recurso filters are deliberately still ignored (the point of the
+  // report is a complete accountability view of whatever battalion(s) you're looking
+  // at, not a narrower subset of it).
+  function reportEscolas(){
+    if(!multi) return escolas;
+    const on = {}; bpmChecks.forEach(c=>on[c.dataset.bpm]=c.checked);
+    return escolas.filter(e=>on[e.bpm]!==false);
+  }
   function renderReport(){
     const suf = turno;
+    const scopedEscolas = reportEscolas();
     document.getElementById('reportTurnoLabel').textContent = suf+'º turno';
     let falta=0, pronto=0, naoMarcado=0;
-    reportRows = escolas.map(e=>{
+    reportRows = scopedEscolas.map(e=>{
       const val = statusOf(e);
       if(val==='falta') falta++; else if(val==='pronto') pronto++; else naoMarcado++;
       return {e, val};
@@ -1054,10 +1066,10 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
         renderReport();
       });
     });
-    const bpmListLocal = multi ? [...new Set(escolas.map(e=>e.bpm))].sort((a,b)=>parseInt(a)-parseInt(b)) : [];
+    const bpmListLocal = multi ? [...new Set(scopedEscolas.map(e=>e.bpm))].sort((a,b)=>parseInt(a)-parseInt(b)) : [];
     document.getElementById('reportBpmBreakdown').innerHTML = bpmListLocal.map(bpm=>{
       let f=0,p=0,n=0;
-      escolas.filter(e=>e.bpm===bpm).forEach(e=>{
+      scopedEscolas.filter(e=>e.bpm===bpm).forEach(e=>{
         const val = statusOf(e);
         if(val==='falta') f++; else if(val==='pronto') p++; else n++;
       });
@@ -1107,15 +1119,34 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   function openPdfReport(){
     renderReport();
     const suf = turno;
+    const scopedEscolas = reportEscolas();
     const bpmCode = multi ? null : (escolas[0] && escolas[0].bpm);
-    const battalionLine = multi ? '' : `${bpmCode}º BATALHÃO DE POLÍCIA MILITAR`;
-    const scopeLabel = multi ? 'Todos os batalhões — CPC I' : (DATA.bpmLabels[bpmCode]||'');
+    let battalionLine, scopeLabel;
+    if(!multi){
+      battalionLine = `${bpmCode}º BATALHÃO DE POLÍCIA MILITAR`;
+      scopeLabel = DATA.bpmLabels[bpmCode] || '';
+    } else {
+      const checkedBpms = bpmChecks.filter(c=>c.checked).map(c=>c.dataset.bpm).sort((a,b)=>parseInt(a)-parseInt(b));
+      if(checkedBpms.length === 0){
+        battalionLine = '';
+        scopeLabel = 'Nenhum batalhão selecionado';
+      } else if(checkedBpms.length === bpmChecks.length){
+        battalionLine = '';
+        scopeLabel = 'Todos os batalhões — CPC I';
+      } else if(checkedBpms.length === 1){
+        battalionLine = `${checkedBpms[0]}º BATALHÃO DE POLÍCIA MILITAR`;
+        scopeLabel = DATA.bpmLabels[checkedBpms[0]] || '';
+      } else {
+        battalionLine = '';
+        scopeLabel = checkedBpms.map(b=>b+'º BPM').join(', ') + ' — CPC I';
+      }
+    }
     let falta=0, pronto=0, naoMarcado=0;
     reportRows.forEach(({val})=>{ if(val==='falta') falta++; else if(val==='pronto') pronto++; else naoMarcado++; });
-    const bpmListLocal = multi ? [...new Set(escolas.map(e=>e.bpm))].sort((a,b)=>parseInt(a)-parseInt(b)) : [];
+    const bpmListLocal = multi ? [...new Set(scopedEscolas.map(e=>e.bpm))].sort((a,b)=>parseInt(a)-parseInt(b)) : [];
     const bpmBreakdownHtml = bpmListLocal.length ? `<div class="bpm-breakdown">${bpmListLocal.map(bpm=>{
       let f=0,p=0,n=0;
-      escolas.filter(e=>e.bpm===bpm).forEach(e=>{
+      scopedEscolas.filter(e=>e.bpm===bpm).forEach(e=>{
         const val = statusOf(e);
         if(val==='falta') f++; else if(val==='pronto') p++; else n++;
       });
@@ -1460,14 +1491,14 @@ ${bpmBreakdownHtml}
 
   ciaChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); }));
   bairroChecks.forEach(c=>c.addEventListener('change', update));
-  bpmChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); }));
+  bpmChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); if(reportOpen) renderReport(); }));
   searchInput.addEventListener('input', update);
   searchRecursoInput.addEventListener('input', update);
   document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>c.checked=true); update(); refreshVisibility();});
   document.getElementById('resetBairro').addEventListener('click', ()=>{bairroChecks.forEach(c=>c.checked=true); update();});
   document.getElementById('resetRecurso').addEventListener('click', ()=>{recursoChecks.forEach(c=>c.checked=true); searchRecursoInput.value=''; update();});
   const resetBpmBtn = document.getElementById('resetBpm');
-  if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update(); refreshVisibility();});
+  if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update(); refreshVisibility(); if(reportOpen) renderReport();});
   refreshVisibility();
 
   // ---- mobile sidebar toggle ----
