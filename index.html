@@ -158,6 +158,10 @@ a{color:inherit;}
 }
 .check-row:hover{background:var(--surface);}
 .check-row.filtered-out{display:none;}
+.check-row.locked{opacity:.4;cursor:not-allowed;}
+.check-row.locked input{cursor:not-allowed;}
+/* personal login: locations outside the officer's own bairros stay visible but dimmed */
+.marker-faded{opacity:.38;filter:grayscale(.85);}
 .check-row input{accent-color:var(--accent);width:14px;height:14px;flex:none;}
 .swatch{width:10px;height:10px;border-radius:50%;flex:none;}
 .check-row .name{flex:1;color:var(--ink);}
@@ -942,7 +946,7 @@ function renderApp(bpmList){
           <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
           <h1>${esc(headerTitle)}</h1>
           <p>${esc(headerSub)}</p>
-          ${AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div>` : (multi ? '' : `<button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>`)}
+          ${AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div><div class="area-note">Os demais bairros aparecem esmaecidos, só para consulta.</div>` : (multi ? '' : `<button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>`)}
         </div>
         <div class="stats">
           <div class="stat"><span class="v tabular">${escolas.length}</span><span class="l">Locais</span></div>
@@ -971,7 +975,7 @@ function renderApp(bpmList){
         <div id="map"></div>
         <div class="filtoggle" id="filtoggle">☰ Filtros</div>
         <button type="button" class="reportbtn" id="reportBtn">📋 Relatório</button>
-        <div class="topbadge"><span class="dot"></span><span id="visibleCount">${located.length}</span>&nbsp;de&nbsp;${located.length} locais visíveis</div>
+        <div class="topbadge"><span class="dot"></span><span id="visibleCount">${AUTH_USER ? located.filter(e=>AUTH_USER.bairros.has(e.bairroKey)).length : located.length}</span>&nbsp;de&nbsp;${AUTH_USER ? located.filter(e=>AUTH_USER.bairros.has(e.bairroKey)).length : located.length} locais visíveis</div>
         <div class="turno-toggle">
           <button type="button" class="active" id="turno1Btn">1º turno</button>
           <button type="button" id="turno2Btn">2º turno</button>
@@ -1119,14 +1123,17 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     }
     return `<div class="ricon plain"><span class="dotfill" style="background:${color}"></span></div>`;
   }
+  // Signed-in officers (AUTH_USER) only own some bairros: everything else stays on the
+  // map for context but dimmed, and never reacts to the filters.
+  const inArea = e => !AUTH_USER || AUTH_USER.bairros.has(e.bairroKey);
   function makeIcon(e, color){
     const cat = turno==='1' ? e.turno1Cat : e.turno2Cat;
-    return L.divIcon({ className:'', html:iconHtml(cat, color), iconSize:[36,36], iconAnchor:[18,18] });
+    return L.divIcon({ className: inArea(e) ? '' : 'marker-faded', html:iconHtml(cat, color), iconSize:[36,36], iconAnchor:[18,18] });
   }
 
   const markerEntries = located.map(e=>{
     const color = ciaColorFor(e.cia);
-    const layer = L.marker([e.lat, e.lon], { icon: makeIcon(e, color) }).addTo(map);
+    const layer = L.marker([e.lat, e.lon], { icon: makeIcon(e, color), zIndexOffset: inArea(e) ? 0 : -1000 }).addTo(map);
     layer.on('click', ()=> openDetail(e, e.cia, color));
     return {layer, e, color};
   });
@@ -1586,6 +1593,7 @@ ${bpmBreakdownHtml}
     let visible = 0;
     const legendCounts = {};
     markerEntries.forEach(({layer, e})=>{
+      if(!inArea(e)){ if(!map.hasLayer(layer)) layer.addTo(map); return; }
       const cat = (turno==='1' ? e.turno1Cat : e.turno2Cat) || '__none__';
       const rawTurno = turno==='1' ? e.turno1 : e.turno2;
       const catLabel = DATA.resourceLabels[cat] || '';
@@ -1596,6 +1604,7 @@ ${bpmBreakdownHtml}
       else if(map.hasLayer(layer)) map.removeLayer(layer);
     });
     bairroEntries.forEach(({layer, key, bpm, cia})=>{
+      if(AUTH_USER && !AUTH_USER.bairros.has(key)){ layer.setStyle({opacity:0.10, fillOpacity:0.02}); return; }
       const bVisible = bairroOn[key] !== false;
       const cVisible = !cia || ciaOn[bpm+'|'+cia] !== false;
       const pVisible = bpmOn[bpm] !== false;
@@ -1636,11 +1645,20 @@ ${bpmBreakdownHtml}
   bpmChecks.forEach(c=>c.addEventListener('change', ()=>{ update(); refreshVisibility(); if(reportOpen) renderReport(); }));
   searchInput.addEventListener('input', update);
   searchRecursoInput.addEventListener('input', update);
-  document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>c.checked=true); update(); refreshVisibility();});
-  document.getElementById('resetBairro').addEventListener('click', ()=>{bairroChecks.forEach(c=>c.checked=true); update();});
+  document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>{ if(!c.disabled) c.checked=true; }); update(); refreshVisibility();});
+  document.getElementById('resetBairro').addEventListener('click', ()=>{bairroChecks.forEach(c=>{ if(!c.disabled) c.checked=true; }); update();});
   document.getElementById('resetRecurso').addEventListener('click', ()=>{recursoChecks.forEach(c=>c.checked=true); searchRecursoInput.value=''; update();});
   const resetBpmBtn = document.getElementById('resetBpm');
   if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update(); refreshVisibility(); if(reportOpen) renderReport();});
+  // Personal login: only the officer's own Companhias/Bairros stay checked; the rest
+  // are unchecked and locked (greyed out) so the filters can't leave their area.
+  if(AUTH_USER){
+    const ownCia = new Set(escolas.filter(e=>AUTH_USER.bairros.has(e.bairroKey)).map(e=>e.bpm+'|'+e.cia));
+    const lock = c => { c.checked = false; c.disabled = true; c.closest('.check-row').classList.add('locked'); };
+    ciaChecks.forEach(c=>{ if(!ownCia.has(c.dataset.ciakey)) lock(c); });
+    bairroChecks.forEach(c=>{ if(!AUTH_USER.bairros.has(c.dataset.key)) lock(c); });
+    update();
+  }
   refreshVisibility();
 
   // ---- mobile sidebar toggle ----
