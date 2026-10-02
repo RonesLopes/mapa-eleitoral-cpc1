@@ -399,6 +399,7 @@ a{color:inherit;}
 .report-gu{font-size:11.5px;color:var(--ink-2);margin-top:4px;font-style:italic;}
 .report-updated{flex:none;font-size:10.5px;color:var(--muted);white-space:nowrap;margin-top:2px;font-family:var(--font-mono);}
 .report-author{font-size:11px;color:var(--muted);margin-top:3px;}
+.report-resp{font-size:11px;color:var(--ink-2);margin-top:3px;}
 .report-empty{padding:30px 10px;text-align:center;color:var(--muted);font-size:13px;}
 @media (max-width:760px){
   .report-overlay{padding:0;align-items:flex-end;}
@@ -1355,6 +1356,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
           <div class="report-title">Nº ${esc(e.numero)} · ${esc(e.local)}</div>
           <div class="report-sub">${multi?esc(DATA.bpmLabels[e.bpm])+' · ':''}${esc(titleCasePt(e.bairro))} · ${esc(e.cia==='CIA não informada'?'Não informada':e.cia)}</div>
           ${guarnicao?`<div class="report-gu">GU: ${esc(guarnicao)}</div>`:''}
+          ${responsavelDe(e.bairroKey)?`<div class="report-resp">Responsável: ${esc(responsavelDe(e.bairroKey))}</div>`:''}
           ${autor?`<div class="report-author">Registrado por: ${esc(autor)}</div>`:''}
         </div>
         <div class="report-updated">${esc(updated)}</div>
@@ -1431,7 +1433,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       return `<tr>
         <td>${esc(e.numero)}</td>
         <td>${esc(e.local)}</td>
-        <td>${esc(titleCasePt(e.bairro))}${multi?` <span class="bpmtag">(${esc(e.bpm)}º BPM)</span>`:''}</td>
+        <td>${esc(titleCasePt(e.bairro))}${multi?` <span class="bpmtag">(${esc(e.bpm)}º BPM)</span>`:''}${responsavelDe(e.bairroKey)?`<br><span class="resp">Resp.: ${esc(responsavelDe(e.bairroKey))}</span>`:''}</td>
         <td>${esc(e.cia==='CIA não informada'?'Não informada':e.cia)}</td>
         <td><span class="status-tag ${statusClass}">${esc(statusLabel)}</span></td>
         <td>${esc(guarnicao)||'—'}</td>
@@ -1470,6 +1472,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   .status-tag.pronto{background:#d9f2d3;color:#166b1a;}
   .status-tag.nao{background:#eee;color:#666;}
   .bpmtag{color:#777;font-size:9px;}
+  .resp{font-size:9px;color:#555;}
   .doc-foot{padding-top:6px;border-top:1px solid #999;font-size:9px;color:#555;text-align:center;}
   .pdf-toolbar{
     position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -1523,7 +1526,7 @@ ${bpmBreakdownHtml}
       <th style="width:9%;">CIA</th>
       <th style="width:9%;">Situação</th>
       <th style="width:21%;">Guarnição</th>
-      <th style="width:17%;">Atualizado / Responsável</th>
+      <th style="width:17%;">Atualizado / Registrado por</th>
     </tr>
   </thead>
   <tbody>${rowsHtml}</tbody>
