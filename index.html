@@ -1045,7 +1045,7 @@ function renderApp(bpmList){
             <li><span class="hi">☰</span><div><b>Filtros:</b> escolha Companhia, Bairro ou Recurso e busque por escola ou endereço. “todas” limpa o filtro.</div></li>
             ${canEditHere
               ? `<li><span class="hi">✅</span><div><b>Pronto:</b> toque em Pronto, escreva os nomes da <b>guarnição</b> (obrigatório) e toque em <b>Salvar</b>. Para desmarcar, toque em Pronto de novo.</div></li>
-            <li><span class="hi">⚠️</span><div><b>Falta:</b> toque em Falta. Se quiser, deixe uma observação. Todos veem na hora.</div></li>`
+            <li><span class="hi">⚠️</span><div><b>Falta:</b> toque em Falta. Se quiser, deixe uma informação importante. Todos veem na hora.</div></li>`
               : `<li><span class="hi">✅</span><div><b>Contorno verde</b> = Pronto · <b>vermelho</b> = Falta.</div></li>`}
             <li><span class="hi">📋</span><div><b>Relatório:</b> lista todos os locais e a situação de cada um. Toque em Falta, Não marcado ou Pronto para filtrar. <b>Visualizar PDF</b> abre o documento para imprimir.</div></li>
           </ul>
@@ -1410,7 +1410,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
         <div class="report-info">
           <div class="report-title">Nº ${esc(e.numero)} · ${esc(e.local)}</div>
           <div class="report-sub">${multi?esc(DATA.bpmLabels[e.bpm])+' · ':''}${esc(titleCasePt(e.bairro))} · ${esc(e.cia==='CIA não informada'?'Não informada':e.cia)}</div>
-          ${guarnicao?`<div class="report-gu">GU: ${esc(guarnicao.toLocaleUpperCase('pt-BR'))}</div>`:''}
+          ${guarnicao?`<div class="report-gu">${val==='falta'?'INFORMAÇÃO':'GU'}: ${esc(guarnicao.toLocaleUpperCase('pt-BR'))}</div>`:''}
           ${responsavelDe(e.bairroKey)?`<div class="report-resp">Responsável: ${esc(responsavelDe(e.bairroKey))}</div>`:''}
           ${autor?`<div class="report-author">Registrado por: ${esc(autor)}</div>`:''}
         </div>
@@ -1682,7 +1682,7 @@ ${bpmBreakdownHtml}
         <div id="guBox" hidden style="margin-top:14px;">
           <div class="gu-head">
             <div class="situacao-label" id="guarnicaoSectionLabel" style="margin-bottom:6px;">Guarnição (GU)</div>
-            <button type="button" class="gu-close" id="guClose" aria-label="Fechar observação" hidden>✕ fechar</button>
+            <button type="button" class="gu-close" id="guClose" aria-label="Fechar informação" hidden>✕ fechar</button>
           </div>
           <div class="gu-hint" id="guHint"></div>
           <textarea id="guarnicaoInput" class="guarnicao-input" rows="2" placeholder="Nomes dos policiais na guarnição…" ${readOnly?'readonly':''}></textarea>
@@ -1745,13 +1745,15 @@ ${bpmBreakdownHtml}
       const optional = !required && val==='falta';
       guBox.hidden = !( required || (optional && !guClosed) || (readOnly && val) );
       guClose.hidden = readOnly || !optional;
-      guarnicaoLabel.textContent = optional ? `Observação — ${suf}º turno` : `Guarnição (GU) — ${suf}º turno`;
+      guarnicaoLabel.textContent = optional ? `Informação importante — ${suf}º turno` : `Guarnição (GU) — ${suf}º turno`;
+      guarnicaoInput.placeholder = optional ? 'Informação importante sobre a falta…' : 'Nomes dos policiais na guarnição…';
       guHint.textContent = readOnly ? '' : pendingPronto ? 'Para confirmar Pronto, informe os componentes da guarnição e salve.'
-        : required ? 'Obrigatório: componentes da guarnição.' : optional ? 'Observação opcional.' : '';
-      if(guarnicaoSaveBtn) guarnicaoSaveBtn.textContent = pendingPronto ? 'Salvar guarnição e confirmar Pronto' : optional ? 'Salvar observação' : 'Salvar guarnição';
+        : required ? 'Obrigatório: componentes da guarnição.' : optional ? 'Opcional.' : '';
+      if(guarnicaoSaveBtn) guarnicaoSaveBtn.textContent = pendingPronto ? 'Salvar guarnição e confirmar Pronto' : optional ? 'Salvar informação' : 'Salvar guarnição';
       guarnicaoMeta.textContent = '';
       if(document.activeElement !== guarnicaoInput){
-        guarnicaoInput.value = gu;
+        // confirming a Pronto over a Falta: the Falta note is not a crew, start the box empty
+        guarnicaoInput.value = (pendingPronto && val==='falta') ? '' : gu;
       }
       updateSaveState();
     }
@@ -1766,7 +1768,7 @@ ${bpmBreakdownHtml}
         if(b.dataset.val==='pronto' && curVal!=='pronto'){
           // Pronto is not saved yet: first the crew names are asked for (tap again to cancel)
           pendingPronto = !pendingPronto; pendingTurno = suf; guClosed = false; render();
-          if(pendingPronto) guarnicaoInput.focus();
+          if(pendingPronto){ if(curVal==='falta') guarnicaoInput.value = ''; updateSaveState(); guarnicaoInput.focus(); }
           return;
         }
         pendingPronto = false; guClosed = false;
@@ -1791,7 +1793,7 @@ ${bpmBreakdownHtml}
           .then(()=>{
             pendingPronto = false;
             guarnicaoInput.value = text;
-            showToast(confirmingPronto ? '✓ Pronto confirmado — guarnição salva' : (optionalNow ? '✓ Observação salva' : '✓ Guarnição salva'));
+            showToast(confirmingPronto ? '✓ Pronto confirmado — guarnição salva' : (optionalNow ? '✓ Informação salva' : '✓ Guarnição salva'));
             guarnicaoMeta.textContent = '';
             render();
           })
