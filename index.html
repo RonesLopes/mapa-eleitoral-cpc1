@@ -1604,7 +1604,14 @@ ${bpmBreakdownHtml}
   document.getElementById('reportPdfBtn').addEventListener('click', openPdfReport);
 
   if(db){
-    db.collection('status').onSnapshot(snap=>{
+    // A single-battalion view (battalion link or personal login) only needs its own battalion's docs (ids start with "{bpm}|"):
+    // reading just those cuts the Firestore reads (free daily quota) roughly 5x. Gerência Geral/admin read everything.
+    let statusQuery = db.collection('status');
+    if(!multi && escolas.length){
+      const idField = firebase.firestore.FieldPath.documentId(), bpmPrefix = escolas[0].bpm;
+      statusQuery = statusQuery.where(idField, '>=', bpmPrefix + '|').where(idField, '<', bpmPrefix + '}');
+    }
+    statusQuery.onSnapshot(snap=>{
       situacaoDocs = {};
       snap.forEach(doc=>{ situacaoDocs[doc.id] = doc.data(); });
       refreshAllSituacaoRings();
