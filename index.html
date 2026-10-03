@@ -1891,6 +1891,9 @@ ${bpmBreakdownHtml}
       layer.setStyle({opacity:on?1:0.10, fillOpacity:on?0.20:0.02});
     });
     visibleCountEl.textContent = visible;
+    // Markers removed/re-added by the filters get a brand-new icon element, which loses the
+    // green/red Situação ring: paint it again every time the filters are applied.
+    refreshAllSituacaoRings();
     // Recurso list (Policial / Guarda Municipal / ...): counts follow the active filters
     document.querySelectorAll('#recursoChecklist .recurso-check').forEach(c=>{
       const n = recursoCounts[c.dataset.recurso] || 0;
