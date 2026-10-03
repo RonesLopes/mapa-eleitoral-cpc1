@@ -340,7 +340,14 @@ a{color:inherit;}
   width:100%;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
   border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical;margin-bottom:8px;
 }
+.guarnicao-input{text-transform:uppercase;}
 .guarnicao-input[readonly]{background:var(--surface-2);color:var(--muted);resize:none;}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(8px);z-index:1100;max-width:min(92vw,420px);
+  background:#0a7d0a;color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;font-weight:700;text-align:center;
+  box-shadow:var(--shadow);pointer-events:none;opacity:0;transition:opacity .2s ease, transform .2s ease;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 .situacao-save{
   border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);border-radius:8px;
   padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--font-body);
@@ -1403,7 +1410,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
         <div class="report-info">
           <div class="report-title">Nº ${esc(e.numero)} · ${esc(e.local)}</div>
           <div class="report-sub">${multi?esc(DATA.bpmLabels[e.bpm])+' · ':''}${esc(titleCasePt(e.bairro))} · ${esc(e.cia==='CIA não informada'?'Não informada':e.cia)}</div>
-          ${guarnicao?`<div class="report-gu">GU: ${esc(guarnicao)}</div>`:''}
+          ${guarnicao?`<div class="report-gu">GU: ${esc(guarnicao.toLocaleUpperCase('pt-BR'))}</div>`:''}
           ${responsavelDe(e.bairroKey)?`<div class="report-resp">Responsável: ${esc(responsavelDe(e.bairroKey))}</div>`:''}
           ${autor?`<div class="report-author">Registrado por: ${esc(autor)}</div>`:''}
         </div>
@@ -1484,7 +1491,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
         <td>${esc(titleCasePt(e.bairro))}${multi?` <span class="bpmtag">(${esc(e.bpm)}º BPM)</span>`:''}${responsavelDe(e.bairroKey)?`<br><span class="resp">Resp.: ${esc(responsavelDe(e.bairroKey))}</span>`:''}</td>
         <td>${esc(e.cia==='CIA não informada'?'Não informada':e.cia)}</td>
         <td><span class="status-tag ${statusClass}">${esc(statusLabel)}</span></td>
-        <td>${esc(guarnicao)||'—'}</td>
+        <td>${esc(guarnicao.toLocaleUpperCase('pt-BR'))||'—'}</td>
         <td>${updatedCell||'—'}</td>
       </tr>`;
     }).join('');
@@ -1629,6 +1636,16 @@ ${bpmBreakdownHtml}
   document.getElementById('zoomOut').addEventListener('click', ()=>map.zoomOut());
   document.getElementById('zoomReset').addEventListener('click', ()=>map.fitBounds(initialBounds,{padding:[24,24]}));
 
+  let toastTimer = null;
+  function showToast(msg){
+    let el = document.getElementById('toast');
+    if(!el){ el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; el.setAttribute('role','status'); document.body.appendChild(el); }
+    el.textContent = msg;
+    requestAnimationFrame(()=> el.classList.add('show'));
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=> el.classList.remove('show'), 2600);
+  }
+
   let situacaoUnsub = null;
   function openDetail(e, cia, color){
     const statusOk = e.status === 'Localizado';
@@ -1700,10 +1717,15 @@ ${bpmBreakdownHtml}
     const docRef = db.collection('status').doc(situacaoDocId(e));
     let lastData = {};
 
+    // Save button: shown while confirming a Pronto or when the text differs from what is
+    // saved; hidden once everything is saved. Text is always stored/shown in upper case.
+    const upper = t => (t||'').trim().toLocaleUpperCase('pt-BR');
     function updateSaveState(){
       if(!guarnicaoSaveBtn) return;
+      const now = upper(guarnicaoInput.value);
       const required = pendingPronto || (lastData['situacao'+turno]==='pronto');
-      guarnicaoSaveBtn.disabled = required && !guarnicaoInput.value.trim();
+      guarnicaoSaveBtn.style.display = (pendingPronto || now !== upper(lastData['guarnicao'+turno])) ? '' : 'none';
+      guarnicaoSaveBtn.disabled = required && !now;
     }
     function render(){
       const suf = turno;
@@ -1756,8 +1778,9 @@ ${bpmBreakdownHtml}
       }));
       guarnicaoSaveBtn.addEventListener('click', ()=>{
         const suf = turno;
-        const text = guarnicaoInput.value.trim().slice(0,500);
+        const text = upper(guarnicaoInput.value).slice(0,500);
         const confirmingPronto = pendingPronto;
+        const optionalNow = !pendingPronto && lastData['situacao'+suf]!=='pronto';
         if((pendingPronto || lastData['situacao'+suf]==='pronto') && !text){
           guarnicaoMeta.textContent = 'Informe a guarnição para confirmar Pronto.'; return;
         }
@@ -1765,7 +1788,13 @@ ${bpmBreakdownHtml}
         const payload = { ['guarnicao'+suf]: text, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' };
         if(confirmingPronto) payload['situacao'+suf] = 'pronto';
         docRef.set(payload, {merge:true})
-          .then(()=>{ pendingPronto = false; guarnicaoMeta.textContent = confirmingPronto ? 'Pronto confirmado.' : 'Guarnição salva.'; })
+          .then(()=>{
+            pendingPronto = false;
+            guarnicaoInput.value = text;
+            showToast(confirmingPronto ? '✓ Pronto confirmado — guarnição salva' : (optionalNow ? '✓ Observação salva' : '✓ Guarnição salva'));
+            guarnicaoMeta.textContent = '';
+            render();
+          })
           .catch(err=>{ guarnicaoMeta.textContent = (err && err.code==='permission-denied') ? 'Sem permissão para este bairro.' : 'Não foi possível salvar. Tente de novo.'; console.error(err); });
       });
     }
