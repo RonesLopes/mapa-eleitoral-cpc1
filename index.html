@@ -325,6 +325,13 @@ a{color:inherit;}
 .situacao-btn:disabled{cursor:default;opacity:.55;}
 .situacao-btn:disabled:hover{background:var(--surface);}
 .situacao-meta{margin-top:8px;font-size:11px;color:var(--muted);min-height:14px;}
+.situacao-btn.pronto.pending{border-color:#0ca30c;color:#0a7d0a;background:rgba(12,163,12,.12);}
+.gu-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.gu-close{border:none;background:none;color:var(--muted);font-size:11.5px;cursor:pointer;padding:2px 0;font-family:var(--font-body);}
+.gu-close:hover{color:var(--ink);}
+.gu-hint{font-size:11.5px;color:var(--ink-2);margin:0 0 6px;line-height:1.35;}
+.gu-hint:empty{display:none;}
+.situacao-save:disabled{opacity:.5;cursor:not-allowed;}
 .situacao-readonly-note{
   font-size:11.5px;color:var(--muted);background:var(--surface-2);border-radius:8px;
   padding:8px 10px;margin-bottom:12px;line-height:1.4;
@@ -1030,8 +1037,8 @@ function renderApp(bpmList){
             <li><span class="hi">🔁</span><div><b>1º / 2º turno:</b> troca o efetivo mostrado no mapa.</div></li>
             <li><span class="hi">☰</span><div><b>Filtros:</b> escolha Companhia, Bairro ou Recurso e busque por escola ou endereço. “todas” limpa o filtro.</div></li>
             ${canEditHere
-              ? `<li><span class="hi">✅</span><div><b>Falta / Pronto:</b> toque no botão dentro do ponto. Toque de novo para desmarcar. Todos veem na hora.</div></li>
-            <li><span class="hi">📝</span><div><b>Guarnição:</b> escreva os nomes e toque em <b>Salvar guarnição</b>.</div></li>`
+              ? `<li><span class="hi">✅</span><div><b>Pronto:</b> toque em Pronto, escreva os nomes da <b>guarnição</b> (obrigatório) e toque em <b>Salvar</b>. Para desmarcar, toque em Pronto de novo.</div></li>
+            <li><span class="hi">⚠️</span><div><b>Falta:</b> toque em Falta. Se quiser, deixe uma observação. Todos veem na hora.</div></li>`
               : `<li><span class="hi">✅</span><div><b>Contorno verde</b> = Pronto · <b>vermelho</b> = Falta.</div></li>`}
             <li><span class="hi">📋</span><div><b>Relatório:</b> lista todos os locais e a situação de cada um. Toque em Falta, Não marcado ou Pronto para filtrar. <b>Visualizar PDF</b> abre o documento para imprimir.</div></li>
           </ul>
@@ -1387,7 +1394,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       const statusLabel = val==='falta' ? 'Falta' : val==='pronto' ? 'Pronto' : 'Não marcado';
       const statusClass = val==='falta' ? 'falta' : val==='pronto' ? 'pronto' : 'nao';
       const data = situacaoDocs[situacaoDocId(e)] || {};
-      const guarnicao = data['guarnicao'+suf] || '';
+      const guarnicao = val ? (data['guarnicao'+suf] || '') : '';   // stale text from an unmarked location is not shown
       const ts = data['updatedAt'+suf];
       const updated = ts ? timeAgo(ts.toDate()) : '';
       const autor = data['autor'+suf] || '';
@@ -1466,7 +1473,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       const statusLabel = val==='falta' ? 'Falta' : val==='pronto' ? 'Pronto' : 'Não marcado';
       const statusClass = val==='falta' ? 'falta' : val==='pronto' ? 'pronto' : 'nao';
       const data = situacaoDocs[situacaoDocId(e)] || {};
-      const guarnicao = data['guarnicao'+suf] || '';
+      const guarnicao = val ? (data['guarnicao'+suf] || '') : '';   // stale text from an unmarked location is not shown
       const ts = data['updatedAt'+suf];
       const updated = ts ? timeAgo(ts.toDate()) : '';
       const autor = data['autor'+suf] || '';
@@ -1655,11 +1662,17 @@ ${bpmBreakdownHtml}
           <button type="button" class="situacao-btn pronto" data-val="pronto" ${readOnly?'disabled':''}>Pronto</button>
         </div>
         <div class="situacao-meta" id="situacaoMeta">Carregando…</div>
-        <div class="situacao-label" id="guarnicaoSectionLabel" style="margin-top:14px;">Guarnição (GU)</div>
-        <textarea id="guarnicaoInput" class="guarnicao-input" rows="2" placeholder="Nomes dos policiais na guarnição…" ${readOnly?'readonly':''}></textarea>
-        ${readOnly ? '' : `<button type="button" class="situacao-save" id="guarnicaoSave">Salvar guarnição</button>`}
+        <div id="guBox" hidden style="margin-top:14px;">
+          <div class="gu-head">
+            <div class="situacao-label" id="guarnicaoSectionLabel" style="margin-bottom:6px;">Guarnição (GU)</div>
+            <button type="button" class="gu-close" id="guClose" aria-label="Fechar observação" hidden>✕ fechar</button>
+          </div>
+          <div class="gu-hint" id="guHint"></div>
+          <textarea id="guarnicaoInput" class="guarnicao-input" rows="2" placeholder="Nomes dos policiais na guarnição…" ${readOnly?'readonly':''}></textarea>
+          ${readOnly ? '' : `<button type="button" class="situacao-save" id="guarnicaoSave">Salvar guarnição</button>`}
+          <div class="situacao-meta" id="guarnicaoMeta"></div>
+        </div>
         ${isAdminUser() ? `<button type="button" class="admin-clear-one" id="adminClearOne">Apagar marcações deste local</button>` : ''}
-        <div class="situacao-meta" id="guarnicaoMeta"></div>
       </div>`;
     detail.classList.add('open');
 
@@ -1672,6 +1685,11 @@ ${bpmBreakdownHtml}
     const guarnicaoInput = document.getElementById('guarnicaoInput');
     const guarnicaoMeta = document.getElementById('guarnicaoMeta');
     const guarnicaoSaveBtn = document.getElementById('guarnicaoSave');
+    const guBox = document.getElementById('guBox');
+    const guClose = document.getElementById('guClose');
+    const guHint = document.getElementById('guHint');
+    // Pronto is only confirmed together with the crew names; Falta just allows an optional note.
+    let pendingPronto = false, guClosed = false, pendingTurno = null;
     if(!db){
       metaEl.textContent = 'Situação indisponível no momento.';
       btns.forEach(b=>b.disabled = true);
@@ -1682,36 +1700,72 @@ ${bpmBreakdownHtml}
     const docRef = db.collection('status').doc(situacaoDocId(e));
     let lastData = {};
 
+    function updateSaveState(){
+      if(!guarnicaoSaveBtn) return;
+      const required = pendingPronto || (lastData['situacao'+turno]==='pronto');
+      guarnicaoSaveBtn.disabled = required && !guarnicaoInput.value.trim();
+    }
     function render(){
       const suf = turno;
       sectionLabel.textContent = `Situação — ${suf}º turno (compartilhada)`;
-      guarnicaoLabel.textContent = `Guarnição (GU) — ${suf}º turno`;
       const val = lastData['situacao'+suf] || null;
-      btns.forEach(b=>b.classList.toggle('active', b.dataset.val===val));
+      const gu = lastData['guarnicao'+suf] || '';
+      if(val==='pronto' || pendingTurno!==suf) pendingPronto = false;
+      btns.forEach(b=>{
+        b.classList.toggle('active', b.dataset.val===val);
+        if(b.dataset.val==='pronto') b.classList.toggle('pending', pendingPronto);
+      });
       const ts = lastData['updatedAt'+suf];
       const autor = lastData['autor'+suf];
       metaEl.textContent = ts ? 'Atualizado ' + timeAgo(ts.toDate()) + (autor ? ' — ' + autor : '') : 'Ainda não marcado';
+      // guarnição box: hidden until Pronto/Falta is chosen
+      const required = pendingPronto || val==='pronto';
+      const optional = !required && val==='falta';
+      guBox.hidden = !( required || (optional && !guClosed) || (readOnly && val) );
+      guClose.hidden = readOnly || !optional;
+      guarnicaoLabel.textContent = optional ? `Observação — ${suf}º turno` : `Guarnição (GU) — ${suf}º turno`;
+      guHint.textContent = readOnly ? '' : pendingPronto ? 'Para confirmar Pronto, informe os componentes da guarnição e salve.'
+        : required ? 'Obrigatório: componentes da guarnição.' : optional ? 'Observação opcional.' : '';
+      if(guarnicaoSaveBtn) guarnicaoSaveBtn.textContent = pendingPronto ? 'Salvar guarnição e confirmar Pronto' : optional ? 'Salvar observação' : 'Salvar guarnição';
       guarnicaoMeta.textContent = '';
       if(document.activeElement !== guarnicaoInput){
-        guarnicaoInput.value = lastData['guarnicao'+suf] || '';
+        guarnicaoInput.value = gu;
       }
+      updateSaveState();
     }
     refreshDetailTurnoUI = render;
 
     if(!readOnly){
+      guarnicaoInput.addEventListener('input', updateSaveState);
+      guClose.addEventListener('click', ()=>{ guClosed = true; render(); });
       btns.forEach(b=>b.addEventListener('click', ()=>{
         const suf = turno;
         const curVal = lastData['situacao'+suf] || null;
+        if(b.dataset.val==='pronto' && curVal!=='pronto'){
+          // Pronto is not saved yet: first the crew names are asked for (tap again to cancel)
+          pendingPronto = !pendingPronto; pendingTurno = suf; guClosed = false; render();
+          if(pendingPronto) guarnicaoInput.focus();
+          return;
+        }
+        pendingPronto = false; guClosed = false;
         const next = curVal===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
         metaEl.textContent = 'Salvando…';
         docRef.set({ ['situacao'+suf]: next, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
           .catch(err=>{ metaEl.textContent = (err && err.code==='permission-denied') ? 'Sem permissão para este bairro.' : 'Não foi possível salvar. Tente de novo.'; console.error(err); });
+        render();
       }));
       guarnicaoSaveBtn.addEventListener('click', ()=>{
         const suf = turno;
+        const text = guarnicaoInput.value.trim().slice(0,500);
+        const confirmingPronto = pendingPronto;
+        if((pendingPronto || lastData['situacao'+suf]==='pronto') && !text){
+          guarnicaoMeta.textContent = 'Informe a guarnição para confirmar Pronto.'; return;
+        }
         guarnicaoMeta.textContent = 'Salvando…';
-        docRef.set({ ['guarnicao'+suf]: guarnicaoInput.value.slice(0,500), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
-          .then(()=>{ guarnicaoMeta.textContent = 'Guarnição salva.'; })
+        const payload = { ['guarnicao'+suf]: text, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' };
+        if(confirmingPronto) payload['situacao'+suf] = 'pronto';
+        docRef.set(payload, {merge:true})
+          .then(()=>{ pendingPronto = false; guarnicaoMeta.textContent = confirmingPronto ? 'Pronto confirmado.' : 'Guarnição salva.'; })
           .catch(err=>{ guarnicaoMeta.textContent = (err && err.code==='permission-denied') ? 'Sem permissão para este bairro.' : 'Não foi possível salvar. Tente de novo.'; console.error(err); });
       });
     }
