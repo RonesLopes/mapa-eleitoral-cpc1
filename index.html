@@ -253,8 +253,20 @@ a{color:inherit;}
   display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink);font-family:var(--font-body);
 }
 .reportbtn:hover{background:var(--surface-2);}
+.reportbtn{right:58px;}
+.helpbtn{
+  position:absolute;top:16px;right:16px;z-index:650;width:34px;height:34px;border-radius:50%;
+  background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);color:var(--ink-2);
+  font-size:15px;font-weight:700;font-family:var(--font-body);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
+}
+.helpbtn:hover{background:var(--surface-2);color:var(--ink);}
+.help-note{margin-top:10px;padding:9px 11px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);font-size:12.5px;line-height:1.45;color:var(--ink-2);}
+.help-list{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:12px;}
+.help-list li{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.45;color:var(--ink-2);}
+.help-list .hi{flex:none;width:24px;text-align:center;font-size:16px;line-height:1.3;}
+.help-list b{color:var(--ink);}
 @media (max-width:760px){
-  .reportbtn{top:66px;}
+  .reportbtn{top:66px;right:16px;}
 }
 
 .filtoggle{display:none;}
@@ -262,7 +274,7 @@ a{color:inherit;}
 .backdrop.show{display:block;}
 @media (max-width:760px){
   .filtoggle{
-    display:flex;position:absolute;top:16px;right:16px;z-index:650;background:var(--surface);
+    display:flex;position:absolute;top:16px;right:58px;z-index:650;background:var(--surface);
     border:1px solid var(--line);border-radius:999px;padding:8px 14px;box-shadow:var(--shadow);
     font-size:12.5px;font-weight:600;gap:6px;align-items:center;cursor:pointer;
   }
@@ -1000,6 +1012,33 @@ function renderApp(bpmList){
   const headerSub = multi ? 'Todos os batalhões — CPC I' : DATA.bpmLabels[bpmList[0]];
   const identity = getIdentity();
   const idChipText = identity ? `Você: ${esc(identityLabel(identity))} (trocar)` : 'Identificar-se';
+  // "?" help guide: short, role-aware (what this person can actually do).
+  const canEditHere = !multi || isAdminUser();
+  const helpNote = isAdminUser()
+    ? 'Você é o <b>administrador</b>: edita qualquer local e usa <b>🛠️ Administração</b> para limpar marcações.'
+    : AUTH_USER
+      ? `Você edita só os seus bairros: <b>${esc(authAreaNames(escolas))}</b>. Os demais aparecem apagados, só para consulta.`
+      : (multi ? 'Esta visão é <b>só de consulta</b>: você vê tudo, mas não altera marcações.' : '');
+  const helpModalHtml = `
+      <div class="id-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+        <div class="id-panel wide">
+          <h2 id="helpTitle">Como usar o mapa</h2>
+          ${helpNote ? `<div class="help-note">${helpNote}</div>` : ''}
+          <ul class="help-list">
+            <li><span class="hi">📍</span><div><b>Toque num ponto</b> para ver a escola, o endereço, os eleitores, o efetivo de cada turno e <b>quem é o responsável</b>.</div></li>
+            <li><span class="hi">🎨</span><div><b>Cor e desenho:</b> a cor do contorno é a Companhia e o desenho é o recurso (policial, viatura, Guarda Municipal…). Abra a <b>Legenda</b> para conferir.</div></li>
+            <li><span class="hi">🔁</span><div><b>1º / 2º turno:</b> troca o efetivo mostrado no mapa.</div></li>
+            <li><span class="hi">☰</span><div><b>Filtros:</b> escolha Companhia, Bairro ou Recurso e busque por escola ou endereço. “todas” limpa o filtro.</div></li>
+            ${canEditHere
+              ? `<li><span class="hi">✅</span><div><b>Falta / Pronto:</b> toque no botão dentro do ponto. Toque de novo para desmarcar. Todos veem na hora.</div></li>
+            <li><span class="hi">📝</span><div><b>Guarnição:</b> escreva os nomes e toque em <b>Salvar guarnição</b>.</div></li>`
+              : `<li><span class="hi">✅</span><div><b>Contorno verde</b> = Pronto · <b>vermelho</b> = Falta.</div></li>`}
+            <li><span class="hi">📋</span><div><b>Relatório:</b> lista todos os locais e a situação de cada um. Toque em Falta, Não marcado ou Pronto para filtrar. <b>Visualizar PDF</b> abre o documento para imprimir.</div></li>
+          </ul>
+          <button type="button" class="id-save" id="helpClose">Entendi</button>
+        </div>
+      </div>`;
+
   // Administrator tools dialog (markup only exists for the admin login).
   const adminModalHtml = `
       <div class="id-overlay" id="adminOverlay" role="dialog" aria-modal="true" aria-labelledby="admTitle">
@@ -1065,6 +1104,7 @@ function renderApp(bpmList){
       <main class="mapwrap" id="mapwrap">
         <div id="map"></div>
         <div class="filtoggle" id="filtoggle">☰ Filtros</div>
+        <button type="button" class="helpbtn" id="helpBtn" aria-label="Ajuda: como usar o mapa" title="Como usar">?</button>
         <button type="button" class="reportbtn" id="reportBtn">📋 Relatório</button>
         <div class="topbadge"><span class="dot"></span><span id="visibleCount">${located.filter(e=>ownsBairro(e.bairroKey)).length}</span>&nbsp;de&nbsp;${located.filter(e=>ownsBairro(e.bairroKey)).length} locais visíveis</div>
         <div class="turno-toggle">
@@ -1105,6 +1145,7 @@ function renderApp(bpmList){
         <button class="close" id="detailClose" aria-label="Fechar">×</button>
         <div id="detailBody"></div>
       </div>
+      ${helpModalHtml}
       ${isAdminUser() ? adminModalHtml : ''}
       <div class="id-overlay" id="idOverlay">
         <div class="id-panel">
@@ -1918,6 +1959,13 @@ ${bpmBreakdownHtml}
       setTimeout(admRefresh, 600);
     });
   }
+
+  // ---- "?" help guide ----
+  const helpOverlay = document.getElementById('helpOverlay');
+  document.getElementById('helpBtn').addEventListener('click', ()=> helpOverlay.classList.add('open'));
+  document.getElementById('helpClose').addEventListener('click', ()=> helpOverlay.classList.remove('open'));
+  helpOverlay.addEventListener('click', ev=>{ if(ev.target===helpOverlay) helpOverlay.classList.remove('open'); });
+  document.addEventListener('keydown', ev=>{ if(ev.key==='Escape') helpOverlay.classList.remove('open'); });
 
   window.addEventListener('resize', ()=>map.invalidateSize());
   setTimeout(()=>map.invalidateSize(), 200);
