@@ -1751,9 +1751,8 @@ ${bpmBreakdownHtml}
         : required ? 'Obrigatório: componentes da guarnição.' : optional ? 'Opcional.' : '';
       if(guarnicaoSaveBtn) guarnicaoSaveBtn.textContent = pendingPronto ? 'Salvar guarnição e confirmar Pronto' : optional ? 'Salvar informação' : 'Salvar guarnição';
       guarnicaoMeta.textContent = '';
-      if(document.activeElement !== guarnicaoInput){
-        // confirming a Pronto over a Falta: the Falta note is not a crew, start the box empty
-        guarnicaoInput.value = (pendingPronto && val==='falta') ? '' : gu;
+      if(document.activeElement !== guarnicaoInput && !pendingPronto){
+        guarnicaoInput.value = gu;
       }
       updateSaveState();
     }
@@ -1768,13 +1767,14 @@ ${bpmBreakdownHtml}
         if(b.dataset.val==='pronto' && curVal!=='pronto'){
           // Pronto is not saved yet: first the crew names are asked for (tap again to cancel)
           pendingPronto = !pendingPronto; pendingTurno = suf; guClosed = false; render();
-          if(pendingPronto){ if(curVal==='falta') guarnicaoInput.value = ''; updateSaveState(); guarnicaoInput.focus(); }
+          if(pendingPronto){ guarnicaoInput.value = ''; updateSaveState(); guarnicaoInput.focus(); }
           return;
         }
         pendingPronto = false; guClosed = false;
         const next = curVal===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
         metaEl.textContent = 'Salvando…';
-        docRef.set({ ['situacao'+suf]: next, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
+        // the text under a Falta/Pronto belongs to that choice: changing or clearing it starts the box empty
+        docRef.set({ ['situacao'+suf]: next, ['guarnicao'+suf]: firebase.firestore.FieldValue.delete(), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
           .catch(err=>{ metaEl.textContent = (err && err.code==='permission-denied') ? 'Sem permissão para este bairro.' : 'Não foi possível salvar. Tente de novo.'; console.error(err); });
         render();
       }));
