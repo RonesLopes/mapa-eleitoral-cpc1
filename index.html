@@ -1027,12 +1027,12 @@ function renderApp(bpmList){
   const identity = getIdentity();
   const idChipText = identity ? `Você: ${esc(identityLabel(identity))} (trocar)` : 'Identificar-se';
   // "?" help guide: short, role-aware (what this person can actually do).
-  const canEditHere = !multi || isAdminUser();
+  const canEditHere = !!AUTH_USER;
   const helpNote = isAdminUser()
     ? 'Você é o <b>administrador</b>: edita qualquer local e usa <b>🛠️ Administração</b> para limpar marcações.'
     : AUTH_USER
       ? `Você edita só os seus bairros: <b>${esc(authAreaNames(escolas))}</b>. Os demais aparecem apagados, só para consulta.`
-      : (multi ? 'Esta visão é <b>só de consulta</b>: você vê tudo, mas não altera marcações.' : '');
+      : 'Este link é <b>só de consulta</b>: você vê tudo, mas não altera marcações. Para marcar, entre com o seu login.';
   const helpModalHtml = `
       <div class="id-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
         <div class="id-panel wide">
@@ -1080,7 +1080,7 @@ function renderApp(bpmList){
     ? `Fonte: O.S. 324 — Operação Eleições 2026. Acesso pessoal — vê o ${bpmList[0]}º BPM inteiro e edita apenas os seus bairros.`
     : multi
     ? `Fonte: O.S. 324 — Operação Eleições 2026. Link de gerência geral — vê e filtra todos os batalhões do CPC I.`
-    : `Fonte: O.S. 324 — Operação Eleições 2026. Link de acesso exclusivo ao ${bpmList[0]}º BPM.`;
+    : `Fonte: O.S. 324 — Operação Eleições 2026. Link de consulta do ${bpmList[0]}º BPM — somente visualização.`;
 
   document.getElementById('root').innerHTML = `
     <div class="app">
@@ -1090,7 +1090,7 @@ function renderApp(bpmList){
           <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
           <h1>${esc(headerTitle)}</h1>
           <p>${esc(headerSub)}</p>
-          ${isAdminUser() ? `<div class="area-note">👤 <b>Administrador</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Acesso total: vê tudo e pode editar e apagar em qualquer local.</div><button type="button" class="admin-btn" id="adminBtn">🛠️ Administração</button>` : AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div><div class="area-note">Os demais bairros aparecem esmaecidos, só para consulta.</div>` : (multi ? '' : `<button type="button" class="id-chip" id="idChipBtn">👤 ${idChipText}</button>`)}
+          ${isAdminUser() ? `<div class="area-note">👤 <b>Administrador</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Acesso total: vê tudo e pode editar e apagar em qualquer local.</div><button type="button" class="admin-btn" id="adminBtn">🛠️ Administração</button>` : AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div><div class="area-note">Os demais bairros aparecem esmaecidos, só para consulta.</div>` : `<div class="area-note">👁️ Somente consulta · <a class="id-chip" href="?login=1">Entrar com login</a></div>`}
         </div>
         <div class="stats">
           <div class="stat"><span class="v tabular">${escolas.length}</span><span class="l">Locais</span></div>
@@ -1237,7 +1237,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   });
   // Gerência Geral (multi=true) is view-only (see openDetail below), so there's
   // nothing there to attribute an edit to — skip the identification prompt entirely.
-  if(!multi && !AUTH_USER && !getIdentity()) openIdModal();
+  // (no identification prompt: anonymous links are view-only, only signed-in users can write)
   const logoutBtn = document.getElementById('logoutBtn');
   if(logoutBtn) logoutBtn.addEventListener('click', ()=>{
     (auth ? auth.signOut() : Promise.resolve()).catch(()=>{}).then(()=>{ location.href = location.pathname + '?login=1'; });
@@ -1663,7 +1663,7 @@ ${bpmBreakdownHtml}
     // only (no backend auth exists in this project by design) — same spirit as the
     // 5 locked battalion links not being able to see each other.
     const outOfArea = !ownsBairro(e.bairroKey);
-    const readOnly = (multi && !isAdminUser()) || outOfArea;
+    const readOnly = !AUTH_USER || outOfArea;
     detailBody.innerHTML = `
       <div class="eyebrow2">Nº ${esc(e.numero)} · ${esc(titleCasePt(e.bairro))}</div>
       <h2>${esc(e.local)}</h2>
@@ -1679,7 +1679,7 @@ ${bpmBreakdownHtml}
         <dt>Status</dt><dd><span class="statusbadge ${statusOk?'ok':'warn'}">${statusOk?'✓':'⚠'} ${esc(e.status)}</span></dd>
       </dl>
       <div class="situacao-section">
-        ${readOnly ? `<div class="situacao-readonly-note">${outOfArea ? `🔒 Fora da sua área — somente visualização. Você edita: ${esc(authAreaNames(escolas))}.` : '👁️ Gerência Geral — somente visualização. Para marcar Situação ou Guarnição, acesse pelo link do próprio batalhão.'}</div>` : ''}
+        ${readOnly ? `<div class="situacao-readonly-note">${outOfArea ? `🔒 Fora da sua área — somente visualização. Você edita: ${esc(authAreaNames(escolas))}.` : '👁️ Somente visualização. Para marcar Situação ou Guarnição, entre com o seu login.'}</div>` : ''}
         <div class="situacao-label" id="situacaoSectionLabel">Situação</div>
         <div class="situacao-group">
           <button type="button" class="situacao-btn falta" data-val="falta" ${readOnly?'disabled':''}>Falta</button>

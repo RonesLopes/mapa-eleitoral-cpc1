@@ -9,13 +9,12 @@ service cloud.firestore {
     // not a login for the battalion links - just an attribution label picked by
     // the client and sent along with every write) so multiple officers
     // sharing the same battalion link can tell who last touched a location.
-    // Public read (anyone with the map link can see current status) and
-    // public write, but only ever writing these fields with validated shapes
-    // - no other collection or field can be touched.
+    // Public read (anyone with the map link can see current status). WRITING needs a
+    // login (since 2026-10-03 the battalion links are view-only), and only these fields
+    // with validated shapes can be written - no other collection or field can be touched.
     // Signed-in users (the officers with a personal login, see index.html USERS) may
     // only write docs whose bairro is on their own list below — enforced HERE, not just
-    // in the UI. Requests with no sign-in (the battalion links) keep the original
-    // public-write behaviour, unchanged.
+    // in the UI. Requests with no sign-in cannot write at all.
     function areaOf(email){
       return {
       'pedrosa@cpc1.app': ['1|SACRAMENTA', '1|TELEGRAFO SEM FIO'],
@@ -51,7 +50,7 @@ service cloud.firestore {
     }
     match /status/{docId} {
       allow read: if true;
-      allow create, update: if validShape() && (request.auth == null || isAdmin() || inMyArea(docId));
+      allow create, update: if validShape() && request.auth != null && (isAdmin() || inMyArea(docId));
       allow delete: if isAdmin();
     }
     match /{document=**} {
