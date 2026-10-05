@@ -472,6 +472,15 @@ select.id-input{appearance:auto;}
 .admin-clear-one{margin-top:14px;width:100%;padding:9px;border-radius:8px;border:1px solid var(--critical);background:none;
   color:var(--critical);font-weight:700;font-size:12.5px;cursor:pointer;font-family:var(--font-body);}
 .admin-clear-one.armed{background:var(--critical);color:#fff;}
+.acc-list{margin-top:12px;border-top:1px solid var(--line);}
+.acc-row{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line);}
+.acc-row .who{flex:1;min-width:0;}
+.acc-row .who b{display:block;font-size:13.5px;}
+.acc-row .who span{display:block;font-size:11.5px;color:var(--muted);margin-top:2px;}
+.acc-switch{flex:none;min-width:104px;padding:8px 10px;border-radius:999px;border:1px solid var(--line-strong);
+  background:var(--surface-2);color:var(--ink-2);font-weight:700;font-size:12px;cursor:pointer;font-family:var(--font-body);}
+.acc-switch.on{background:#1baf7a;border-color:#1baf7a;color:#fff;}
+.acc-switch:disabled{opacity:.5;cursor:wait;}
 
 /* ---------- personal login ---------- */
 .login-form{max-width:360px;margin-top:6px;}
@@ -819,10 +828,49 @@ function enterAsUser(p){
   };
   renderApp([p.bpm]);
 }
+// Personal logins only get in while the admin has them switched on in "Controle de
+// acessos" (config/acessos; missing = off). firestore.rules enforces the same switch
+// on every write — this is the matching interface, and it signs the officer out live
+// if they're switched off with the map open.
+const ACESSOS_REF = () => db.collection('config').doc('acessos');
+async function enterIfEnabled(p){
+  if(p.admin){ enterAsUser(p); return; }
+  let enabled = false;
+  try{
+    const snap = await ACESSOS_REF().get();
+    enabled = snap.exists && snap.data()[p.username] === true;
+  }catch(err){
+    console.warn('Could not read access switches', err);
+    await auth.signOut().catch(()=>{});
+    renderAccessOff('Não foi possível verificar o seu acesso agora. Verifique a internet e tente de novo.');
+    return;
+  }
+  if(!enabled){
+    await auth.signOut().catch(()=>{});
+    renderAccessOff();
+    return;
+  }
+  enterAsUser(p);
+  const stop = ACESSOS_REF().onSnapshot(snap=>{
+    if(snap.exists && snap.data()[p.username] === true) return;
+    stop();
+    auth.signOut().catch(()=>{}).then(()=> renderAccessOff());
+  }, err=> console.warn('access switch watch failed', err));
+}
+function renderAccessOff(msg){
+  AUTH_USER = null;
+  document.getElementById('root').innerHTML = `
+    <div class="chooser">
+      <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
+      <h1>Acesso desativado</h1>
+      <p>${esc(msg || 'O seu acesso de edição está desativado no momento. Procure o administrador do sistema.')}</p>
+      <p><a href="?login=1">Voltar ao login</a></p>
+    </div>`;
+}
 async function startLogin(){
   const u = await authReady();
   const p = u && profileForUser(u);
-  if(p){ enterAsUser(p); return; }
+  if(p){ await enterIfEnabled(p); return; }
   if(u){ try{ await auth.signOut(); }catch(err){} }
   renderLogin();
 }
@@ -867,7 +915,7 @@ function renderLogin(){
       const cred = await auth.signInWithEmailAndPassword(name+'@'+AUTH_DOMAIN, passEl.value);
       const p = profileForUser(cred.user);
       if(!p){ await auth.signOut(); throw {code:'auth/invalid-credential'}; }
-      enterAsUser(p);
+      await enterIfEnabled(p);
     }catch(err){
       errEl.textContent = loginErrorText(err);
       btn.disabled = false; btn.textContent = 'Entrar';
@@ -1073,6 +1121,21 @@ function renderApp(bpmList){
             <button type="button" class="adm-danger" id="admRun" disabled>Apagar</button>
           </div>
         </div>
+      </div>
+      <div class="id-overlay" id="accOverlay" role="dialog" aria-modal="true" aria-labelledby="accTitle">
+        <div class="id-panel wide">
+          <h2 id="accTitle">Controle de acessos</h2>
+          <p class="id-sub">Liga ou desliga o login de edição de cada oficial. Desligado, ele não entra e quem estiver com o mapa aberto sai na hora. As marcações já feitas não são apagadas. Os links de consulta continuam funcionando para todos.</p>
+          <div class="adm-actions">
+            <button type="button" class="adm-secondary" id="accAllOn">Ligar todos</button>
+            <button type="button" class="adm-secondary" id="accAllOff">Desligar todos</button>
+          </div>
+          <div class="acc-list" id="accList"></div>
+          <div class="adm-msg" id="accMsg" role="status"></div>
+          <div class="adm-actions">
+            <button type="button" class="adm-secondary" id="accClose">Fechar</button>
+          </div>
+        </div>
       </div>`;
   const footnoteText = isAdminUser()
     ? `Fonte: O.S. 324 — Operação Eleições 2026. Acesso de administrador geral — vê todos os batalhões e pode editar e apagar em qualquer local.`
@@ -1090,7 +1153,7 @@ function renderApp(bpmList){
           <div class="eyebrow">Operação Eleições 2026 · CPC I</div>
           <h1>${esc(headerTitle)}</h1>
           <p>${esc(headerSub)}</p>
-          ${isAdminUser() ? `<div class="area-note">👤 <b>Administrador</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Acesso total: vê tudo e pode editar e apagar em qualquer local.</div><button type="button" class="admin-btn" id="adminBtn">🛠️ Administração</button>` : AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div><div class="area-note">Os demais bairros aparecem esmaecidos, só para consulta.</div>` : `<div class="area-note">👁️ Somente consulta · <a class="id-chip" href="?login=1">Entrar com login</a></div>`}
+          ${isAdminUser() ? `<div class="area-note">👤 <b>Administrador</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Acesso total: vê tudo e pode editar e apagar em qualquer local.</div><button type="button" class="admin-btn" id="adminBtn">🛠️ Administração</button> <button type="button" class="admin-btn" id="accBtn">🔑 Controle de acessos</button>` : AUTH_USER ? `<div class="area-note">👤 <b>${esc(AUTH_USER.label)}</b> · <button type="button" class="id-chip" id="logoutBtn">Sair</button></div><div class="area-note">Você edita: <b>${esc(authAreaNames(escolas))}</b></div><div class="area-note">Os demais bairros aparecem esmaecidos, só para consulta.</div>` : `<div class="area-note">👁️ Somente consulta · <a class="id-chip" href="?login=1">Entrar com login</a></div>`}
         </div>
         <div class="stats">
           <div class="stat"><span class="v tabular">${escolas.length}</span><span class="l">Locais</span></div>
@@ -2053,6 +2116,54 @@ ${bpmBreakdownHtml}
       }
       setTimeout(admRefresh, 600);
     });
+  }
+
+  // ---- "Controle de acessos": admin switches each personal login on/off in
+  // config/acessos. firestore.rules reads the same doc on every officer write. ----
+  const accBtn = document.getElementById('accBtn');
+  if(accBtn){
+    const accOverlay = document.getElementById('accOverlay');
+    const accList = document.getElementById('accList'), accMsg = document.getElementById('accMsg');
+    const officers = Object.entries(USERS).filter(([,u])=> !u.admin);
+    let acessos = {}, accUnsub = null;
+    function renderAcc(){
+      accList.innerHTML = officers.map(([name,u])=>{
+        const on = acessos[name] === true;
+        const area = u.bpm+'º BPM · ' + u.bairros.map(k=> titleCasePt(k.split('|')[1])).join(', ');
+        return `<div class="acc-row"><div class="who"><b>${esc(((u.patente||'')+' '+u.nome).trim())}</b><span>Usuário: ${esc(name)} · ${esc(area)}</span></div>
+          <button type="button" class="acc-switch${on?' on':''}" data-name="${esc(name)}" aria-pressed="${on}">${on?'● Ligado':'○ Desligado'}</button></div>`;
+      }).join('');
+    }
+    async function saveAcc(changes){
+      accMsg.textContent = 'Salvando…';
+      accList.querySelectorAll('.acc-switch').forEach(b=> b.disabled = true);
+      try{
+        await ACESSOS_REF().set(changes, {merge:true});
+        accMsg.textContent = 'Salvo.';
+      }catch(err){
+        console.error(err);
+        accMsg.textContent = 'Não foi possível salvar: ' + ((err && err.code==='permission-denied') ? 'sem permissão.' : 'verifique a internet e tente de novo.');
+        renderAcc();
+      }
+    }
+    accBtn.addEventListener('click', ()=>{
+      accMsg.textContent = '';
+      renderAcc();
+      accOverlay.classList.add('open');
+      if(!accUnsub) accUnsub = ACESSOS_REF().onSnapshot(snap=>{
+        acessos = snap.exists ? snap.data() : {};
+        renderAcc();
+      }, err=>{ console.error(err); accMsg.textContent = 'Não foi possível carregar os acessos.'; });
+    });
+    document.getElementById('accClose').addEventListener('click', ()=> accOverlay.classList.remove('open'));
+    accList.addEventListener('click', ev=>{
+      const b = ev.target.closest('.acc-switch');
+      if(!b) return;
+      saveAcc({[b.dataset.name]: acessos[b.dataset.name] !== true});
+    });
+    const setAll = val=> saveAcc(Object.fromEntries(officers.map(([name])=> [name, val])));
+    document.getElementById('accAllOn').addEventListener('click', ()=> setAll(true));
+    document.getElementById('accAllOff').addEventListener('click', ()=> setAll(false));
   }
 
   // ---- "?" help guide ----

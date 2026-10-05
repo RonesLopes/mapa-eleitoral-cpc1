@@ -44,14 +44,31 @@ service cloud.firestore {
     function isAdmin(){
       return request.auth != null && request.auth.token.email == 'admin@cpc1.app';
     }
+    // Access switch per officer, toggled by the admin in "Controle de acessos":
+    // config/acessos = { pedrosa: true, thais: false, ... }. A missing doc or key
+    // counts as OFF, so every personal login stays switched off until the admin
+    // turns it on. Their accounts and areas are kept; only writing is blocked.
+    function loginEnabled(){
+      let path = /databases/$(database)/documents/config/acessos;
+      return exists(path)
+        && get(path).data.get(request.auth.token.email.split('@')[0], false) == true;
+    }
     function inMyArea(docId){
       return request.auth != null && request.auth.token.email != null
-        && docId.split('__')[0] in areaOf(request.auth.token.email);
+        && docId.split('__')[0] in areaOf(request.auth.token.email)
+        && loginEnabled();
     }
     match /status/{docId} {
       allow read: if true;
       allow create, update: if validShape() && request.auth != null && (isAdmin() || inMyArea(docId));
       allow delete: if isAdmin();
+    }
+    match /config/acessos {
+      allow read: if request.auth != null;
+      allow write: if isAdmin()
+        && request.resource.data.keys().hasOnly(['pedrosa', 'thais', 'sales', 'amanajas', 'karyn',
+             'tatiane', 'anjos', 'sidney', 'noronha', 'vanderlei'])
+        && request.resource.data.values().hasOnly([true, false]);
     }
     match /{document=**} {
       allow read, write: if false;
