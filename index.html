@@ -994,6 +994,21 @@ function authAreaNames(escolas){
   }).filter(Boolean).join(', ') || '—';
 }
 
+// "Eleitores por local" filter: fixed ranges on the sheet's voter count (column 8).
+// Locations with no number in the sheet fall under "Sem informação".
+const ELEITORES_FAIXAS = [
+  {key:'a', label:'Até 1.000', max:1000},
+  {key:'b', label:'1.001 a 2.000', max:2000},
+  {key:'c', label:'2.001 a 3.000', max:3000},
+  {key:'d', label:'3.001 a 5.000', max:5000},
+  {key:'e', label:'Acima de 5.000', max:Infinity},
+  {key:'__none__', label:'Sem informação'}
+];
+function eleitoresFaixa(e){
+  if(e.eleitoresNum==null) return '__none__';
+  return ELEITORES_FAIXAS.find(f=> f.max!=null && e.eleitoresNum<=f.max).key;
+}
+
 function renderApp(bpmList){
   document.body.classList.add('map-view');
   try{
@@ -1059,6 +1074,10 @@ function renderApp(bpmList){
 
   // initial paint always starts on turno 1 (see `let turno = '1'` in wireApp)
   const resourceRows = resourceChecklistRows(escolas, '1');
+  const eleitoresRows = ELEITORES_FAIXAS
+    .filter(f=> f.key!=='__none__' || escolas.some(e=> eleitoresFaixa(e)==='__none__'))
+    .map(f=>`<label class="check-row"><input type="checkbox" class="eleitores-check" data-faixa="${f.key}" checked>
+      <span class="name">${esc(f.label)}</span><span class="count tabular">${escolas.filter(e=> eleitoresFaixa(e)===f.key).length}</span></label>`).join('');
 
   const missingBox = missing.length ? `<div class="filter-group"><div class="missing-box">
     <div class="mh">⚠ ${missing.length} local(is) sem coordenada</div>
@@ -1169,6 +1188,10 @@ function renderApp(bpmList){
           <h3>Recurso (turno atual) <button id="resetRecurso" type="button">todos</button></h3>
           <input type="text" class="search-input" id="searchRecurso" placeholder="Buscar recurso (ex: GPA, recobrimento)…">
           <div class="checklist" id="recursoChecklist">${resourceRows}</div>
+        </div>
+        <div class="filter-group">
+          <h3>Eleitores por local <button id="resetEleitores" type="button">todos</button></h3>
+          <div class="checklist" id="eleitoresChecklist">${eleitoresRows}</div>
         </div>
         <div class="filter-group">
           <h3>Bairro <button id="resetBairro" type="button">todos</button></h3>
@@ -1919,6 +1942,7 @@ ${bpmBreakdownHtml}
     bindRecursoChecks();
   }
   const bpmChecks = [...document.querySelectorAll('.bpm-check')];
+  const eleitoresChecks = [...document.querySelectorAll('.eleitores-check')];
   const searchInput = document.getElementById('searchLocal');
   const searchRecursoInput = document.getElementById('searchRecurso');
 
@@ -1927,28 +1951,34 @@ ${bpmBreakdownHtml}
     const bairroOn = {}; bairroChecks.forEach(c=>bairroOn[c.dataset.key]=c.checked);
     const recursoOn = {}; recursoChecks.forEach(c=>recursoOn[c.dataset.recurso]=c.checked);
     const bpmOn = {}; bpmChecks.forEach(c=>bpmOn[c.dataset.bpm]=c.checked);
+    const eleitoresOn = {}; eleitoresChecks.forEach(c=>eleitoresOn[c.dataset.faixa]=c.checked);
     const q = norm(searchInput.value||'');
     const qRecurso = norm(searchRecursoInput.value||'');
-    return {ciaOn, bairroOn, recursoOn, bpmOn, q, qRecurso};
+    return {ciaOn, bairroOn, recursoOn, bpmOn, eleitoresOn, q, qRecurso};
   }
 
   function update(){
-    const {ciaOn, bairroOn, recursoOn, bpmOn, q, qRecurso} = currentFilters();
+    const {ciaOn, bairroOn, recursoOn, bpmOn, eleitoresOn, q, qRecurso} = currentFilters();
     let visible = 0;
     const legendCounts = {};
     const recursoCounts = {};
+    const eleitoresCounts = {};
     markerEntries.forEach(({layer, e})=>{
       if(!inArea(e)){ if(!map.hasLayer(layer)) layer.addTo(map); return; }
       const cat = (turno==='1' ? e.turno1Cat : e.turno2Cat) || '__none__';
       const rawTurno = turno==='1' ? e.turno1 : e.turno2;
       const catLabel = DATA.resourceLabels[cat] || '';
-      // "base" = everything except the Recurso filters themselves: the Recurso list counts
-      // are drawn from it, so they always describe the Batalhão/Companhia/Bairro/busca in force.
+      // "base" = Batalhão/Companhia/Bairro/busca. The Recurso and Eleitores list counts each
+      // apply every filter except their own, so they show what checking a row would add.
       const base = (ciaOn[e.bpm+'|'+e.cia]!==false) && (bairroOn[e.bairroKey]!==false) &&
         (bpmOn[e.bpm]!==false) && (!q || norm(e.local).includes(q) || norm(e.endereco).includes(q));
-      if(base) recursoCounts[cat] = (recursoCounts[cat]||0) + 1;
-      const on = base && (recursoOn[cat]!==false) &&
+      const faixa = eleitoresFaixa(e);
+      const recursoOk = (recursoOn[cat]!==false) &&
         (!qRecurso || norm(catLabel).includes(qRecurso) || norm(rawTurno||'').includes(qRecurso));
+      const eleitoresOk = eleitoresOn[faixa]!==false;
+      if(base && eleitoresOk) recursoCounts[cat] = (recursoCounts[cat]||0) + 1;
+      if(base && recursoOk) eleitoresCounts[faixa] = (eleitoresCounts[faixa]||0) + 1;
+      const on = base && recursoOk && eleitoresOk;
       if(on){ if(!map.hasLayer(layer)) layer.addTo(map); visible++; const o = ciaOrdinal(e.cia); legendCounts[o] = (legendCounts[o]||0) + 1; }
       else if(map.hasLayer(layer)) map.removeLayer(layer);
     });
@@ -1967,6 +1997,12 @@ ${bpmBreakdownHtml}
     // Recurso list (Policial / Guarda Municipal / ...): counts follow the active filters
     document.querySelectorAll('#recursoChecklist .recurso-check').forEach(c=>{
       const n = recursoCounts[c.dataset.recurso] || 0;
+      const row = c.closest('.check-row');
+      row.querySelector('.count').textContent = n;
+      row.style.opacity = n ? '' : '.45';
+    });
+    eleitoresChecks.forEach(c=>{
+      const n = eleitoresCounts[c.dataset.faixa] || 0;
       const row = c.closest('.check-row');
       row.querySelector('.count').textContent = n;
       row.style.opacity = n ? '' : '.45';
@@ -2007,6 +2043,8 @@ ${bpmBreakdownHtml}
   document.getElementById('resetCia').addEventListener('click', ()=>{ciaChecks.forEach(c=>{ if(!c.disabled) c.checked=true; }); update(); refreshVisibility();});
   document.getElementById('resetBairro').addEventListener('click', ()=>{bairroChecks.forEach(c=>{ if(!c.disabled) c.checked=true; }); update();});
   document.getElementById('resetRecurso').addEventListener('click', ()=>{recursoChecks.forEach(c=>c.checked=true); searchRecursoInput.value=''; update();});
+  eleitoresChecks.forEach(c=>c.addEventListener('change', update));
+  document.getElementById('resetEleitores').addEventListener('click', ()=>{eleitoresChecks.forEach(c=>c.checked=true); update();});
   const resetBpmBtn = document.getElementById('resetBpm');
   if(resetBpmBtn) resetBpmBtn.addEventListener('click', ()=>{bpmChecks.forEach(c=>c.checked=true); update(); refreshVisibility(); if(reportOpen) renderReport();});
   // Personal login: only the officer's own Companhias/Bairros stay checked; the rest
