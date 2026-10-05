@@ -325,6 +325,13 @@ a{color:inherit;}
 .situacao-btn:disabled{cursor:default;opacity:.55;}
 .situacao-btn:disabled:hover{background:var(--surface);}
 .situacao-meta{margin-top:8px;font-size:11px;color:var(--muted);min-height:14px;}
+.hist{margin-top:16px;border-top:1px solid var(--line);padding-top:10px;}
+.hist summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;}
+.hist-list{margin-top:8px;font-size:12px;line-height:1.45;}
+.hist-row{padding:7px 0;border-bottom:1px dotted var(--line);}
+.hist-when{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);}
+.hist-text{margin-top:2px;color:var(--ink-2);word-break:break-word;}
+.hist-empty{color:var(--muted);}
 .situacao-btn.pronto.pending{border-color:#0ca30c;color:#0a7d0a;background:rgba(12,163,12,.12);}
 .gu-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .gu-close{border:none;background:none;color:var(--muted);font-size:11.5px;cursor:pointer;padding:2px 0;font-family:var(--font-body);}
@@ -1132,6 +1139,7 @@ function renderApp(bpmList){
           <select class="id-input" id="admTurno"><option value="both">1º e 2º turno (tudo)</option><option value="1">Somente o 1º turno</option><option value="2">Somente o 2º turno</option></select>
           <div class="adm-count" id="admCount"></div>
           <button type="button" class="adm-secondary adm-csv" id="admCsv">⬇ Baixar uma cópia (CSV) antes de apagar</button>
+          <button type="button" class="adm-secondary adm-csv" id="admHistCsv">⬇ Baixar o histórico completo de alterações (CSV)</button>
           <label class="id-label" for="admConfirm">Para confirmar, digite LIMPAR</label>
           <input type="text" class="id-input" id="admConfirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="LIMPAR">
           <div class="adm-msg" id="admMsg" role="status"></div>
@@ -1333,6 +1341,18 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
     const id = getIdentity();
     return id ? identityLabel(id) : null;
   }
+  // Change history: every status write also appends an immutable entry to "historico"
+  // in the same batch (firestore.rules forbid editing/deleting it, even for the admin),
+  // so it's possible to see everything that happened at a location, not just the last author.
+  // acao: falta | pronto | desmarcado | guarnicao | apagado.
+  function histRef(){ return db.collection('historico').doc(); }
+  function histEntry(localId, turnoX, acao, texto){
+    return { local: localId, turno: turnoX, acao, texto: (texto||'').slice(0,500),
+      autor: (currentAutorLabel() || 'Não identificado').slice(0,100),
+      quando: firebase.firestore.FieldValue.serverTimestamp() };
+  }
+  const HIST_ACAO = { falta:'Marcou FALTA', pronto:'Confirmou PRONTO', desmarcado:'Desmarcou a situação',
+    guarnicao:'Alterou o texto', apagado:'Apagou as marcações' };
 
   const map = L.map('map', {zoomControl:false, attributionControl:true});
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -1408,16 +1428,30 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
   // every link, including personal logins, whose locked filters start on their own area).
   // Recurso and the text searches are still not applied — they narrow what you see on the
   // map, not who is accountable.
-  function reportEscolas(){
+  // UPDATE 2026-10-05: the "Eleitores por local" ranges apply to the report too (asked for,
+  // e.g. to list only the large locations); pass false to get the scope without them.
+  function reportEscolas(withEleitores = true){
     const bpmOn = {}; bpmChecks.forEach(c=>bpmOn[c.dataset.bpm]=c.checked);
     const ciaOn = {}; ciaChecks.forEach(c=>ciaOn[c.dataset.ciakey]=c.checked);
     const bairroOn = {}; bairroChecks.forEach(c=>bairroOn[c.dataset.key]=c.checked);
-    return escolas.filter(e=> bpmOn[e.bpm]!==false && ciaOn[e.bpm+'|'+e.cia]!==false && bairroOn[e.bairroKey]!==false);
+    const eleitoresOn = {}; if(withEleitores) eleitoresChecks.forEach(c=>eleitoresOn[c.dataset.faixa]=c.checked);
+    return escolas.filter(e=> bpmOn[e.bpm]!==false && ciaOn[e.bpm+'|'+e.cia]!==false && bairroOn[e.bairroKey]!==false
+      && eleitoresOn[eleitoresFaixa(e)]!==false);
   }
-  // Human-readable description of the Companhia/Bairro narrowing in force ('' = nothing narrowed).
+  // Human-readable description of the Companhia/Bairro/Eleitores narrowing in force ('' = nothing narrowed).
   function reportFilterText(){
-    const sc = reportEscolas();
-    if(!sc.length) return 'Nenhum local selecionado nos filtros';
+    if(!reportEscolas().length) return 'Nenhum local selecionado nos filtros';
+    const parts = reportAreaParts();
+    if(eleitoresChecks.some(c=>!c.checked)){
+      const on = eleitoresChecks.filter(c=>c.checked)
+        .map(c=> ELEITORES_FAIXAS.find(f=>f.key===c.dataset.faixa).label.toLowerCase());
+      parts.push('Eleitores: ' + (on.length ? on.join(', ') : 'nenhuma faixa'));
+    }
+    return parts.join(' — ');
+  }
+  function reportAreaParts(){
+    const sc = reportEscolas(false);
+    if(!sc.length) return [];
     const bpmsOn = new Set(bpmChecks.length ? bpmChecks.filter(c=>c.checked).map(c=>c.dataset.bpm) : escolas.map(e=>e.bpm));
     const pool = escolas.filter(e=>bpmsOn.has(e.bpm));
     const ciaKey = e=>e.bpm+'|'+e.cia;
@@ -1440,7 +1474,7 @@ function wireApp({multi, bairros, escolas, located, bairroToCia, ciaColorFor}){
       const names = [...bSc].map(k=>{ const e = sc.find(x=>x.bairroKey===k); return titleCasePt(e.bairro); }).sort((a,b)=>a.localeCompare(b));
       parts.push(names.join(', '));
     }
-    return parts.join(' — ');
+    return parts;
   }
   function renderReport(){
     const suf = turno;
@@ -1783,7 +1817,11 @@ ${bpmBreakdownHtml}
           <div class="situacao-meta" id="guarnicaoMeta"></div>
         </div>
         ${isAdminUser() ? `<button type="button" class="admin-clear-one" id="adminClearOne">Apagar marcações deste local</button>` : ''}
-      </div>`;
+      </div>
+      <details class="hist" id="histBox">
+        <summary>Histórico deste local</summary>
+        <div class="hist-list" id="histList">Carregando…</div>
+      </details>`;
     detail.classList.add('open');
 
     if(situacaoUnsub){ situacaoUnsub(); situacaoUnsub=null; }
@@ -1809,6 +1847,28 @@ ${bpmBreakdownHtml}
     }
     const docRef = db.collection('status').doc(situacaoDocId(e));
     let lastData = {};
+
+    // history list: loaded when the "Histórico" section is opened, refreshed after each save
+    const histBox = document.getElementById('histBox'), histList = document.getElementById('histList');
+    let histReload = null;
+    async function loadHist(){
+      try{
+        const snap = await db.collection('historico').where('local','==',docRef.id).get();
+        const rows = snap.docs.map(d=>d.data())
+          .sort((a,b)=> (b.quando ? b.quando.toMillis() : Date.now()) - (a.quando ? a.quando.toMillis() : Date.now()));
+        histList.innerHTML = rows.length ? rows.map(h=>`<div class="hist-row">
+            <div class="hist-when">${h.quando ? esc(h.quando.toDate().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})) : 'agora'} · ${h.turno==='ambos' ? '1º e 2º turno' : esc(h.turno)+'º turno'}</div>
+            <div><b>${esc(HIST_ACAO[h.acao] || h.acao)}</b> — ${esc(h.autor)}</div>
+            ${h.texto ? `<div class="hist-text">${esc(h.texto)}</div>` : ''}
+          </div>`).join('')
+          : '<div class="hist-empty">Nenhuma alteração registrada desde 05/10/2026, quando o histórico começou a ser gravado.</div>';
+      }catch(err){
+        console.error(err);
+        histList.textContent = 'Não foi possível carregar o histórico.';
+      }
+    }
+    histBox.addEventListener('toggle', ()=>{ if(histBox.open) loadHist(); });
+    histReload = ()=>{ if(histBox.open) loadHist(); };
 
     // Save button: shown while confirming a Pronto or when the text differs from what is
     // saved; hidden once everything is saved. Text is always stored/shown in upper case.
@@ -1864,10 +1924,15 @@ ${bpmBreakdownHtml}
           return;
         }
         pendingPronto = false; guClosed = false;
-        const next = curVal===b.dataset.val ? firebase.firestore.FieldValue.delete() : b.dataset.val;
+        const unmark = curVal===b.dataset.val;
+        const next = unmark ? firebase.firestore.FieldValue.delete() : b.dataset.val;
         metaEl.textContent = 'Salvando…';
         // the text under a Falta/Pronto belongs to that choice: changing or clearing it starts the box empty
-        docRef.set({ ['situacao'+suf]: next, ['guarnicao'+suf]: firebase.firestore.FieldValue.delete(), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true})
+        const batch = db.batch();
+        batch.set(docRef, { ['situacao'+suf]: next, ['guarnicao'+suf]: firebase.firestore.FieldValue.delete(), ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' }, {merge:true});
+        batch.set(histRef(), histEntry(docRef.id, suf, unmark ? 'desmarcado' : b.dataset.val, ''));
+        batch.commit()
+          .then(()=>{ if(histReload) histReload(); })
           .catch(err=>{ metaEl.textContent = (err && err.code==='permission-denied') ? 'Sem permissão para este bairro.' : 'Não foi possível salvar. Tente de novo.'; console.error(err); });
         render();
       }));
@@ -1882,8 +1947,12 @@ ${bpmBreakdownHtml}
         guarnicaoMeta.textContent = 'Salvando…';
         const payload = { ['guarnicao'+suf]: text, ['updatedAt'+suf]: firebase.firestore.FieldValue.serverTimestamp(), ['autor'+suf]: currentAutorLabel() || 'Não identificado' };
         if(confirmingPronto) payload['situacao'+suf] = 'pronto';
-        docRef.set(payload, {merge:true})
+        const batch = db.batch();
+        batch.set(docRef, payload, {merge:true});
+        batch.set(histRef(), histEntry(docRef.id, suf, confirmingPronto ? 'pronto' : 'guarnicao', text));
+        batch.commit()
           .then(()=>{
+            if(histReload) histReload();
             pendingPronto = false;
             guarnicaoInput.value = text;
             showToast(confirmingPronto ? '✓ Pronto confirmado — guarnição salva' : (optionalNow ? '✓ Informação salva' : '✓ Guarnição salva'));
@@ -1905,7 +1974,10 @@ ${bpmBreakdownHtml}
           return;
         }
         clearTimeout(timer); armed = false; clearOneBtn.classList.remove('armed'); clearOneBtn.textContent = 'Apagando…';
-        docRef.delete().then(()=>{ clearOneBtn.textContent = 'Apagado.'; setTimeout(()=>{ clearOneBtn.textContent = label; }, 1500); })
+        const batch = db.batch();
+        batch.delete(docRef);
+        batch.set(histRef(), histEntry(docRef.id, 'ambos', 'apagado', ''));
+        batch.commit().then(()=>{ clearOneBtn.textContent = 'Apagado.'; if(histReload) histReload(); setTimeout(()=>{ clearOneBtn.textContent = label; }, 1500); })
           .catch(err=>{ console.error(err); clearOneBtn.textContent = 'Não foi possível apagar.'; });
       });
     }
@@ -2105,28 +2177,58 @@ ${bpmBreakdownHtml}
     [admBpm, admTurno].forEach(el=> el.addEventListener('change', admRefresh));
     admConfirm.addEventListener('input', admRefresh);
 
+    // status doc id "<bpm>|<BAIRRO>__<nº>" -> readable battalion / bairro / número
+    function describeLocalId(id){
+      const bpm = id.split('|')[0];
+      const rest = id.slice(id.indexOf('|')+1), k = rest.lastIndexOf('__');
+      const bairroKey = bpm+'|'+rest.slice(0,k), num = rest.slice(k+2);
+      const esc1 = DATA.escolas.find(x=>x.bairroKey===bairroKey);
+      const local = DATA.escolas.find(x=>x.bairroKey===bairroKey && String(x.numero).replace(/\//g,'-')===num);
+      return { bpm, bairro: esc1 ? titleCasePt(esc1.bairro) : bairroKey, num, local: local ? local.local : '' };
+    }
+    function downloadCsv(rows, prefix){
+      const csv = '﻿' + rows.map(r=> r.map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+      a.download = prefix + '_' + new Date().toISOString().slice(0,16).replace(/[-:T]/g,'') + '.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
+    }
     // optional backup: only downloads when the button is clicked
     document.getElementById('admCsv').addEventListener('click', ()=>{
       const rows = [['Batalhão','Bairro','Nº','Turno','Situação','Guarnição','Registrado por','Atualizado em']];
       Object.keys(situacaoDocs).sort().forEach(id=>{
-        const bpm = id.split('|')[0];
+        const {bpm, bairro, num} = describeLocalId(id);
         if(admBpm.value!=='all' && bpm!==admBpm.value) return;
         const d = situacaoDocs[id];
-        const rest = id.slice(id.indexOf('|')+1), k = rest.lastIndexOf('__');
-        const bairroKey = bpm+'|'+rest.slice(0,k), num = rest.slice(k+2);
-        const esc1 = DATA.escolas.find(x=>x.bairroKey===bairroKey);
         ['1','2'].forEach(t=>{
           if(!hasTurno(d, t)) return;
           const ts = d['updatedAt'+t];
-          rows.push([bpm+'º BPM', esc1 ? titleCasePt(esc1.bairro) : bairroKey, num, t+'º', d['situacao'+t]||'', d['guarnicao'+t]||'', d['autor'+t]||'', ts && ts.toDate ? ts.toDate().toLocaleString('pt-BR') : '']);
+          rows.push([bpm+'º BPM', bairro, num, t+'º', d['situacao'+t]||'', d['guarnicao'+t]||'', d['autor'+t]||'', ts && ts.toDate ? ts.toDate().toLocaleString('pt-BR') : '']);
         });
       });
-      const csv = '﻿' + rows.map(r=> r.map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
-      a.download = 'marcacoes_' + new Date().toISOString().slice(0,16).replace(/[-:T]/g,'') + '.csv';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
+      downloadCsv(rows, 'marcacoes');
+    });
+    // full change history (every battalion, or the one picked above), oldest first
+    document.getElementById('admHistCsv').addEventListener('click', async ()=>{
+      admMsg.textContent = 'Gerando histórico…';
+      try{
+        const snap = await db.collection('historico').get();
+        const rows = [['Data/hora','Batalhão','Bairro','Nº','Local','Turno','Ação','Texto','Feito por']];
+        snap.docs.map(d=>d.data())
+          .filter(h=> admBpm.value==='all' || h.local.split('|')[0]===admBpm.value)
+          .sort((a,b)=> (a.quando ? a.quando.toMillis() : 0) - (b.quando ? b.quando.toMillis() : 0))
+          .forEach(h=>{
+            const {bpm, bairro, num, local} = describeLocalId(h.local);
+            rows.push([h.quando ? h.quando.toDate().toLocaleString('pt-BR') : '', bpm+'º BPM', bairro, num, local,
+              h.turno==='ambos' ? '1º e 2º' : h.turno+'º', HIST_ACAO[h.acao] || h.acao, h.texto||'', h.autor||'']);
+          });
+        downloadCsv(rows, 'historico');
+        admMsg.textContent = `Histórico baixado: ${rows.length-1} registro(s).`;
+      }catch(err){
+        console.error(err);
+        admMsg.textContent = 'Não foi possível baixar o histórico.';
+      }
     });
 
     admRun.addEventListener('click', async ()=>{
@@ -2134,10 +2236,12 @@ ${bpmBreakdownHtml}
       if(!ids.length) return;
       admRun.disabled = true; admMsg.textContent = 'Apagando…';
       try{
-        for(let i=0; i<ids.length; i+=400){
+        // 2 writes per location (status + its history entry), batches cap at 500 writes
+        for(let i=0; i<ids.length; i+=200){
           const batch = db.batch();
-          ids.slice(i, i+400).forEach(id=>{
+          ids.slice(i, i+200).forEach(id=>{
             const ref = db.collection('status').doc(id);
+            batch.set(histRef(), histEntry(id, t==='both' ? 'ambos' : t, 'apagado', 'Limpeza geral (Administração)'));
             if(t==='both'){ batch.delete(ref); return; }
             const other = t==='1' ? '2' : '1';
             if(!hasTurno(situacaoDocs[id], other)){ batch.delete(ref); return; }   // nothing left on the other turno

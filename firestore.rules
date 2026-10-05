@@ -63,6 +63,26 @@ service cloud.firestore {
       allow create, update: if validShape() && request.auth != null && (isAdmin() || inMyArea(docId));
       allow delete: if isAdmin();
     }
+    // Change history: one entry per Situação/Guarnição change, written by the app in the
+    // same batch as the status write. Append-only — nobody (not even the admin) can edit
+    // or delete an entry. Same who-may-write-where rule as the status docs themselves.
+    function validHist(){
+      let d = request.resource.data;
+      return d.keys().hasOnly(['local', 'turno', 'acao', 'texto', 'autor', 'quando'])
+        && d.local is string && d.local.size() <= 200
+        && d.turno in ['1', '2', 'ambos']
+        && d.acao in ['falta', 'pronto', 'desmarcado', 'guarnicao', 'apagado']
+        && d.texto is string && d.texto.size() <= 500
+        && d.autor is string && d.autor.size() <= 100
+        && d.quando == request.time;
+    }
+    match /historico/{entryId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && (isAdmin() || inMyArea(request.resource.data.local))
+        && validHist();
+      allow update, delete: if false;
+    }
     match /config/acessos {
       allow read: if request.auth != null;
       allow write: if isAdmin()
